@@ -1,38 +1,44 @@
 package dao
 
 type MemoryDB struct {
-	db map[string]bool
+	urlNdxMap map[string]string
+	abvNdxMap map[string]string
 }
 
 func CreateMemoryDB() MemoryDB {
-	return MemoryDB{db: map[string]bool{}}
+	return MemoryDB{urlNdxMap: map[string]string{}, abvNdxMap: map[string]string{}}
 }
 
 func (d *MemoryDB) IsLikelyOk() bool {
 	return true
 }
 
-func (d *MemoryDB) Save(app string) error {
-	d.db[app] = true
+func (d *MemoryDB) Save(abv string, url string) error {
+	d.urlNdxMap[url] = abv
+	d.abvNdxMap[abv] = url
 	return nil
 }
 
-func (d *MemoryDB) Delete(app string) error {
-	delete(d.db, app)
+func (d *MemoryDB) DeleteAbv(abv string) error {
+	url := d.abvNdxMap[abv]
+	delete(d.abvNdxMap, abv)
+	delete(d.urlNdxMap, url)
 	return nil
 }
-func (d *MemoryDB) Exists(app string) (bool, error) {
-	return d.db[app], nil
+
+func (d *MemoryDB) DeleteUrl(url string) error {
+	abv := d.urlNdxMap[url]
+	delete(d.abvNdxMap, abv)
+	delete(d.urlNdxMap, url)
+	return nil
 }
 
-func (d *MemoryDB) List() ([]string, error) {
-	rtn := make([]string, 0)
-	for app, val := range d.db {
-		if val {
-			rtn = append(rtn, app)
-		}
-	}
-	return rtn, nil
+func (d *MemoryDB) GetUrl(abv string) (string, error) {
+	return d.abvNdxMap[abv], nil
+}
+
+func (d *MemoryDB) GetAbv(url string) (string, error) {
+	return d.urlNdxMap[url], nil
 }
 
 func (d *MemoryDB) Cleanup() {

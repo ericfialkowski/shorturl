@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"math/rand"
 	"net/http"
 	"shorturl/dao"
 	"shorturl/environment"
@@ -18,8 +19,10 @@ var ip = environment.GetEnvStringOrDefault("ip", "")
 var mongoUri = environment.GetEnvStringOrDefault("mongo_uri", "") // mongodb://root:p%40ssw0rd!@localhost/admin
 
 func main() {
-	db := dao.CreateMongoDB(mongoUri)
+	rand.Seed(time.Now().UnixNano())
+	db := dao.CreateMemoryDB()
 	defer db.Cleanup()
+	db.Save("aa", "http://www.google.com")
 
 	// set up http router
 	r := mux.NewRouter()
