@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"shorturl/dao"
-	"shorturl/rando"
 
 	"github.com/gorilla/mux"
 )
@@ -66,19 +65,17 @@ func (h *Handlers) AddHandler(writer http.ResponseWriter, request *http.Request)
 		return
 	}
 
-	u := ""
-
-	abv = rando.RandStrn(5)
-	u, err = h.dao.GetUrl(abv)
-	for len(u) != 0 {
-		u, err = h.dao.GetUrl(abv) // TODO: handle error
-		abv = rando.RandStrn(5)
+	abv, err = dao.CreateAbbreviation(url, h.dao)
+	if err != nil {
+		writer.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprintf(writer, "Error creating abbreviation: %v", err)
+		return
 	}
 
 	err = h.dao.Save(abv, url)
 	if err != nil {
 		writer.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprintf(writer, "Error parsing url: %v", err)
+		fmt.Fprintf(writer, "Error saving url: %v", err)
 		return
 	}
 
