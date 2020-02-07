@@ -20,7 +20,12 @@ var mongoUri = environment.GetEnvStringOrDefault("mongo_uri", "") // mongodb://r
 
 func main() {
 	rand.Seed(time.Now().UnixNano())
-	db := dao.CreateMemoryDB()
+	var db dao.ShortUrlDao
+	if len(mongoUri) == 0 {
+		db = dao.CreateMemoryDB()
+	} else {
+		db = dao.CreateMongoDB(mongoUri)
+	}
 	defer db.Cleanup()
 	db.Save("aa", "http://www.google.com")
 
@@ -44,7 +49,7 @@ func main() {
 	//
 	// add other handlers
 	//
-	h := handlers.CreateHandlers(&db)
+	h := handlers.CreateHandlers(db)
 	h.SetUp(r)
 
 	bindAddr := fmt.Sprintf("%s:%d", ip, port)

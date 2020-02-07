@@ -28,11 +28,12 @@ type MongoDB struct {
 
 const dbName = "shorturl"
 const collectionName = "urls"
-const fieldName = "name"
+const urlFieldName = "url"
+const abvFieldName = "abv"
 
 var once sync.Once
 
-func CreateMongoDB(uri string) MongoDB {
+func CreateMongoDB(uri string) ShortUrlDao {
 	client, err := mongo.NewClient(options.Client().
 		ApplyURI(uri).
 		SetAppName("shorturl"))
@@ -46,18 +47,18 @@ func CreateMongoDB(uri string) MongoDB {
 		log.Fatalf("Couldn't connect: %v", err)
 	}
 
-	go once.Do(func() {
-		mod := mongo.IndexModel{
-			Keys: bson.M{
-				fieldName: 1, // index in ascending order
-			}, Options: options.Index().SetUnique(true).SetName("uniqueness_ndx"),
-		}
-		poisonCollection := client.Database(dbName).Collection(collectionName)
-		poisonCollection.Indexes().CreateOne(ctx, mod)
-	})
+	//go once.Do(func() {
+	//	mod := mongo.IndexModel{
+	//		Keys: bson.M{
+	//			urlFieldName: 1, // index in ascending order
+	//		}, Options: options.Index().SetUnique(true).SetName("uniqueness_ndx"),
+	//	}
+	//	collection := client.Database(dbName).Collection(collectionName)
+	//	collection.Indexes().CreateOne(ctx, mod)
+	//})
 
 	//defer client.Disconnect(ctx)
-	return MongoDB{client: *client}
+	return &MongoDB{client: *client}
 }
 
 func (d *MongoDB) Cleanup() {
@@ -74,70 +75,81 @@ func (d *MongoDB) IsLikelyOk() bool {
 	return err == nil
 }
 
-func (d *MongoDB) Save(app string) error {
+func (d *MongoDB) Save(abv string, url string) error {
 	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
 
-	poisonCollection := d.client.Database(dbName).Collection(collectionName)
-	_, err := poisonCollection.InsertOne(ctx, bson.D{
-		{fieldName, app},
+	collection := d.client.Database(dbName).Collection(collectionName)
+	_, err := collection.InsertOne(ctx, bson.D{
+		{abvFieldName, abv},
+		{urlFieldName, url},
 	})
 
 	if err != nil {
 		if !strings.Contains(err.Error(), "E11000 duplicate") {
-			return fmt.Errorf("couldn't poison %s: %v", app, err)
+			return fmt.Errorf("couldn't store (%s, %s): %v", abv, url, err)
 		}
 	}
 	return nil
 }
 
-func (d *MongoDB) Delete(app string) error {
+func (d *MongoDB) DeleteAbv(abv string) error {
 	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
-	poisonCollection := d.client.Database(dbName).Collection(collectionName)
-	m := bson.M{fieldName: app}
-	_, err := poisonCollection.DeleteOne(ctx, m)
+	collection := d.client.Database(dbName).Collection(collectionName)
+	m := bson.M{abvFieldName: abv}
+	_, err := collection.DeleteOne(ctx, m)
 	if err != nil {
-		return fmt.Errorf("couldn't unpoison %s: %v", app, err)
+		return fmt.Errorf("couldn't delete abv %s: %v", abv, err)
 	}
 
 	return nil
 }
 
-func (d *MongoDB) Exists(app string) (bool, error) {
+func (d *MongoDB) DeleteUrl(url string) error {
 	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
-	poisonCollection := d.client.Database(dbName).Collection(collectionName)
-	m := bson.M{fieldName: app}
-	result := poisonCollection.FindOne(ctx, m)
+	collection := d.client.Database(dbName).Collection(collectionName)
+	m := bson.M{urlFieldName: url}
+	_, err := collection.DeleteOne(ctx, m)
+	if err != nil {
+		return fmt.Errorf("couldn't delete url %s: %v", url, err)
+	}
+
+	return nil
+}
+
+func (d *MongoDB) GetUrl(abv string) (string, error) {
+	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
+	collection := d.client.Database(dbName).Collection(collectionName)
+	m := bson.M{abvFieldName: abv}
+	result := collection.FindOne(ctx, m)
 
 	if result.Err() != nil {
-		//return false, fmt.Errorf("error looking up %s: %v", app, result.Err())
-		return false, nil
+		//return false, fmt.Errorf("error looking up %s: %v", abv, result.Err())
+		return "", nil
 	}
 
 	var data bson.M
 	if err := result.Decode(&data); err != nil {
-		return false, fmt.Errorf("error decoding return %s: %v", app, result.Err())
+		return "", fmt.Errorf("error decoding return %s: %v", abv, result.Err())
 	}
 
-	return true, nil
+	return fmt.Sprintf("%v", data[urlFieldName]), nil
 }
 
-func (d *MongoDB) List() ([]string, error) {
-	rtn := make([]string, 0)
+func (d *MongoDB) GetAbv(url string) (string, error) {
 	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
+	collection := d.client.Database(dbName).Collection(collectionName)
+	m := bson.M{urlFieldName: url}
+	result := collection.FindOne(ctx, m)
 
-	poisonCollection := d.client.Database(dbName).Collection(collectionName)
-	cursor, err := poisonCollection.Find(ctx, bson.M{})
-	if err != nil {
-		return nil, fmt.Errorf("couldn't list applications: %v", err)
-	}
-	defer cursor.Close(ctx)
-	for cursor.Next(ctx) {
-		var app bson.M
-		if err = cursor.Decode(&app); err != nil {
-			return rtn, fmt.Errorf("error decoding applications: %v", err)
-		}
-		rtn = append(rtn, fmt.Sprint(app[fieldName])) // TODO: see if there is a better way to do this
+	if result.Err() != nil {
+		//return false, fmt.Errorf("error looking up %s: %v", url, result.Err())
+		return "", nil
 	}
 
-	return rtn, nil
+	var data bson.M
+	if err := result.Decode(&data); err != nil {
+		return "", fmt.Errorf("error decoding return %s: %v", url, result.Err())
+	}
+
+	return fmt.Sprintf("%v", data[abvFieldName]), nil
 }
