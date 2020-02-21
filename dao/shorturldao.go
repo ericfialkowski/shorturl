@@ -7,5 +7,6 @@ type ShortUrlDao interface {
 	DeleteUrl(url string) error
 	GetUrl(abv string) (string, error)
 	GetAbv(url string) (string, error)
+	GetStats(abv string) (ShortUrl, error)
 	Cleanup()
 }

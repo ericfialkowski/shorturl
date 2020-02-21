@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -30,6 +31,7 @@ const dbName = "shorturl"
 const collectionName = "urls"
 const urlFieldName = "url"
 const abvFieldName = "abv"
+const hitsFieldName = "hits"
 
 var once sync.Once
 
@@ -47,15 +49,18 @@ func CreateMongoDB(uri string) ShortUrlDao {
 		log.Fatalf("Couldn't connect: %v", err)
 	}
 
-	//go once.Do(func() {
-	//	mod := mongo.IndexModel{
-	//		Keys: bson.M{
-	//			urlFieldName: 1, // index in ascending order
-	//		}, Options: options.Index().SetUnique(true).SetName("uniqueness_ndx"),
-	//	}
-	//	collection := client.Database(dbName).Collection(collectionName)
-	//	collection.Indexes().CreateOne(ctx, mod)
-	//})
+	once.Do(func() {
+		mod := mongo.IndexModel{
+			Keys: bson.M{
+				abvFieldName: 1, // index in ascending order
+			}, Options: options.Index().SetUnique(true).SetName("abv_uniqueness_ndx"),
+		}
+		collection := client.Database(dbName).Collection(collectionName)
+		_, err = collection.Indexes().CreateOne(ctx, mod)
+		if err != nil {
+			log.Printf("Error creating index %v", err)
+		}
+	})
 
 	//defer client.Disconnect(ctx)
 	return &MongoDB{client: *client}
@@ -98,7 +103,7 @@ func (d *MongoDB) DeleteAbv(abv string) error {
 	m := bson.M{abvFieldName: abv}
 	_, err := collection.DeleteOne(ctx, m)
 	if err != nil {
-		return fmt.Errorf("couldn't delete abv %s: %v", abv, err)
+		return fmt.Errorf("couldn't delete Abbreviation %s: %v", abv, err)
 	}
 
 	return nil
@@ -110,7 +115,7 @@ func (d *MongoDB) DeleteUrl(url string) error {
 	m := bson.M{urlFieldName: url}
 	_, err := collection.DeleteOne(ctx, m)
 	if err != nil {
-		return fmt.Errorf("couldn't delete url %s: %v", url, err)
+		return fmt.Errorf("couldn't delete Url %s: %v", url, err)
 	}
 
 	return nil
@@ -123,7 +128,7 @@ func (d *MongoDB) GetUrl(abv string) (string, error) {
 	result := collection.FindOne(ctx, m)
 
 	if result.Err() != nil {
-		//return false, fmt.Errorf("error looking up %s: %v", abv, result.Err())
+		//return false, fmt.Errorf("error looking up %s: %v", Abbreviation, result.Err())
 		return "", nil
 	}
 
@@ -132,7 +137,33 @@ func (d *MongoDB) GetUrl(abv string) (string, error) {
 		return "", fmt.Errorf("error decoding return %s: %v", abv, result.Err())
 	}
 
+	update := bson.D{{"$inc", bson.D{{hitsFieldName, 1}}}}
+	go func() {
+		collection.UpdateOne(ctx, m, update)
+	}()
 	return fmt.Sprintf("%v", data[urlFieldName]), nil
+}
+
+func (d *MongoDB) GetStats(abv string) (ShortUrl, error) {
+	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
+	collection := d.client.Database(dbName).Collection(collectionName)
+	m := bson.M{abvFieldName: abv}
+	result := collection.FindOne(ctx, m)
+
+	if result.Err() != nil {
+		//return false, fmt.Errorf("error looking up %s: %v", Abbreviation, result.Err())
+		return ShortUrl{}, nil
+	}
+
+	var data bson.M
+	if err := result.Decode(&data); err != nil {
+		return ShortUrl{}, fmt.Errorf("error decoding return %s: %v", abv, result.Err())
+	}
+
+	a := fmt.Sprintf("%v", data[abvFieldName])
+	h, _ := strconv.Atoi(fmt.Sprintf("%v", data[hitsFieldName]))
+	u := fmt.Sprintf("%v", data[urlFieldName])
+	return ShortUrl{Url: u, Abbreviation: a, Hits: h}, nil
 }
 
 func (d *MongoDB) GetAbv(url string) (string, error) {
@@ -142,7 +173,7 @@ func (d *MongoDB) GetAbv(url string) (string, error) {
 	result := collection.FindOne(ctx, m)
 
 	if result.Err() != nil {
-		//return false, fmt.Errorf("error looking up %s: %v", url, result.Err())
+		//return false, fmt.Errorf("error looking up %s: %v", Url, result.Err())
 		return "", nil
 	}
 

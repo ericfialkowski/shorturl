@@ -14,6 +14,7 @@ import (
 const contentType string = "Content-Type"
 const appJson string = "application/json"
 const AppPath string = "/{abv}"
+const StatsPath string = "/{abv}/stats"
 
 type Handlers struct {
 	dao dao.ShortUrlDao
@@ -41,6 +42,29 @@ func (h *Handlers) GetHandler(writer http.ResponseWriter, request *http.Request)
 	}
 
 	http.Redirect(writer, request, url, http.StatusFound)
+}
+
+func (h *Handlers) StatsHandler(writer http.ResponseWriter, request *http.Request) {
+	vars := mux.Vars(request)
+	abv := vars["abv"]
+	stats, err := h.dao.GetStats(abv)
+
+	if err != nil {
+		writer.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprintf(writer, "Error getting stats: %v", err)
+		return
+	}
+
+	if stats.Abbreviation == "" {
+		writer.WriteHeader(http.StatusNotFound)
+		fmt.Fprint(writer, "No link found")
+		return
+	}
+
+	writer.WriteHeader(http.StatusOK)
+	writer.Header().Set("Content-Type", "application/json")
+
+	json.NewEncoder(writer).Encode(stats)
 }
 
 func (h *Handlers) AddHandler(writer http.ResponseWriter, request *http.Request) {
@@ -102,6 +126,7 @@ func (h *Handlers) DeleteHandler(writer http.ResponseWriter, request *http.Reque
 }
 
 func (h *Handlers) SetUp(r *mux.Router) {
+	r.HandleFunc(StatsPath, h.StatsHandler).Methods("GET")
 	r.HandleFunc(AppPath, h.DeleteHandler).Methods("DELETE")
 	r.HandleFunc(AppPath, h.GetHandler).Methods("GET")
 	r.HandleFunc("/", h.AddHandler).Methods("POST")
