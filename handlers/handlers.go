@@ -62,7 +62,7 @@ func (h *Handlers) StatsHandler(writer http.ResponseWriter, request *http.Reques
 	}
 
 	writer.WriteHeader(http.StatusOK)
-	writer.Header().Set("Content-Type", "application/json")
+	writer.Header().Add(contentType, appJson)
 
 	json.NewEncoder(writer).Encode(stats)
 }

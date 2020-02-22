@@ -7,7 +7,7 @@ type MemoryDB struct {
 }
 
 func CreateMemoryDB() ShortUrlDao {
-	return &MemoryDB{urlNdxMap: map[string]string{}, abvNdxMap: map[string]string{}}
+	return &MemoryDB{urlNdxMap: map[string]string{}, abvNdxMap: map[string]string{}, hitMap: map[string]int{}}
 }
 
 func (d *MemoryDB) IsLikelyOk() bool {
