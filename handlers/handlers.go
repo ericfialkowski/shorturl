@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"shorturl/dao"
+	"shorturl/environment"
 
 	"github.com/gorilla/mux"
 )
@@ -125,13 +126,22 @@ func (h *Handlers) DeleteHandler(writer http.ResponseWriter, request *http.Reque
 	}
 }
 
-func (h *Handlers) SetUp(r *mux.Router) {
-	r.HandleFunc(StatsPath, h.StatsHandler).Methods(http.MethodGet)
-	r.HandleFunc(AppPath, h.DeleteHandler).Methods(http.MethodDelete)
-	r.HandleFunc(AppPath, h.GetHandler).Methods(http.MethodGet)
-	r.HandleFunc("/", h.AddHandler).Methods(http.MethodPost)
+func (h *Handlers) SetUp(router *mux.Router) {
+	router.HandleFunc(StatsPath, logWrapper(h.StatsHandler)).Methods(http.MethodGet)
+	router.HandleFunc(AppPath, logWrapper(h.DeleteHandler)).Methods(http.MethodDelete)
+	router.HandleFunc(AppPath, logWrapper(h.GetHandler)).Methods(http.MethodGet)
+	router.HandleFunc("/", logWrapper(h.AddHandler)).Methods(http.MethodPost)
 }
 
 func logErr(err error) {
 	log.Printf("Couldn't encode/write status: %v", err)
+}
+
+func logWrapper(wrappedHandler http.HandlerFunc) http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		if environment.GetEnvBoolOrDefault("logrequests", false) {
+			log.Printf("%s - %s\n", request.Method, request.RequestURI)
+		}
+		wrappedHandler(writer, request)
+	}
 }
