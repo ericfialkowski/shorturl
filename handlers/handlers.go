@@ -126,10 +126,10 @@ func (h *Handlers) DeleteHandler(writer http.ResponseWriter, request *http.Reque
 }
 
 func (h *Handlers) SetUp(r *mux.Router) {
-	r.HandleFunc(StatsPath, h.StatsHandler).Methods("GET")
-	r.HandleFunc(AppPath, h.DeleteHandler).Methods("DELETE")
-	r.HandleFunc(AppPath, h.GetHandler).Methods("GET")
-	r.HandleFunc("/", h.AddHandler).Methods("POST")
+	r.HandleFunc(StatsPath, h.StatsHandler).Methods(http.MethodGet)
+	r.HandleFunc(AppPath, h.DeleteHandler).Methods(http.MethodDelete)
+	r.HandleFunc(AppPath, h.GetHandler).Methods(http.MethodGet)
+	r.HandleFunc("/", h.AddHandler).Methods(http.MethodPost)
 }
 
 func logErr(err error) {
