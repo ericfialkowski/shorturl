@@ -7,14 +7,16 @@ import (
 )
 
 func randString() string {
-	return rando.RandStrn(environment.GetEnvIntOrDefault("keysize", 5))
+	for {
+		s := rando.RandStrn(environment.GetEnvIntOrDefault("keysize", 5))
+		if !BadWord(s) {
+			return s
+		}
+	}
 }
 
 func CreateAbbreviation(url string, dao ShortUrlDao) (string, error) {
 	abv := randString()
-	for BadWord(abv) {
-		abv = randString()
-	}
 
 	u, err := dao.GetUrl(abv)
 	for len(u) != 0 && url != u {
