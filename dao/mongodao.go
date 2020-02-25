@@ -18,7 +18,6 @@ import (
 
 /*
 Still TODO:
-	- parameterize user/password/host
 	- retries for operations
 	- get a client in each call?
 	- parameterize timeouts
@@ -70,7 +69,7 @@ func CreateMongoDB(uri string) ShortUrlDao {
 
 func (d *MongoDB) Cleanup() {
 	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
-	d.client.Disconnect(ctx)
+	_ = d.client.Disconnect(ctx)
 }
 
 func (d *MongoDB) IsLikelyOk() bool {

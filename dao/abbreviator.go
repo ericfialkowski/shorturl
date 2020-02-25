@@ -20,7 +20,7 @@ func CreateAbbreviation(url string, dao ShortUrlDao) (string, error) {
 
 	u, err := dao.GetUrl(abv)
 	for len(u) != 0 && url != u {
-		u, err = dao.GetUrl(abv) // TODO: handle error
+		u, err = dao.GetUrl(abv)
 		if err != nil {
 			return "", fmt.Errorf("error checking abbeviation %v", err)
 		}
