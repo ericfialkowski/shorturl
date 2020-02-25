@@ -4,10 +4,11 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -32,6 +33,7 @@ const collectionName = "urls"
 const urlFieldName = "url"
 const abvFieldName = "abv"
 const hitsFieldName = "hits"
+const lastAccessFieldName = "last_access"
 
 var once sync.Once
 
@@ -137,11 +139,17 @@ func (d *MongoDB) GetUrl(abv string) (string, error) {
 		return "", fmt.Errorf("error decoding return %s: %v", abv, result.Err())
 	}
 
-	update := bson.D{{"$inc", bson.D{{hitsFieldName, 1}}}}
+	update := bson.D{{"$inc", bson.D{{hitsFieldName, 1}}},
+		{"$currentDate", bson.D{{lastAccessFieldName, true}}},
+	}
+
 	go func() {
-		collection.UpdateOne(ctx, m, update)
+		_, err := collection.UpdateOne(ctx, m, update)
+		if err != nil {
+			log.Printf("Error updating doc %v", err)
+		}
 	}()
-	return fmt.Sprintf("%v", data[urlFieldName]), nil
+	return data[urlFieldName].(string), nil
 }
 
 func (d *MongoDB) GetStats(abv string) (ShortUrl, error) {
@@ -160,10 +168,12 @@ func (d *MongoDB) GetStats(abv string) (ShortUrl, error) {
 		return ShortUrl{}, fmt.Errorf("error decoding return %s: %v", abv, result.Err())
 	}
 
-	a := fmt.Sprintf("%v", data[abvFieldName])
-	h, _ := strconv.Atoi(fmt.Sprintf("%v", data[hitsFieldName]))
-	u := fmt.Sprintf("%v", data[urlFieldName])
-	return ShortUrl{Url: u, Abbreviation: a, Hits: h}, nil
+	a := data[abvFieldName].(string)
+	h := data[hitsFieldName].(int32)
+	u := data[urlFieldName].(string)
+	la := data[lastAccessFieldName].(primitive.DateTime).Time()
+
+	return ShortUrl{Url: u, Abbreviation: a, Hits: h, LastAccess: la}, nil
 }
 
 func (d *MongoDB) GetAbv(url string) (string, error) {

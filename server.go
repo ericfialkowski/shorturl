@@ -27,7 +27,6 @@ func main() {
 		db = dao.CreateMongoDB(mongoUri)
 	}
 	defer db.Cleanup()
-	db.Save("aa", "http://www.google.com")
 
 	// set up http router
 	r := mux.NewRouter()

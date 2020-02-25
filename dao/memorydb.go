@@ -3,11 +3,11 @@ package dao
 type MemoryDB struct {
 	urlNdxMap map[string]string
 	abvNdxMap map[string]string
-	hitMap    map[string]int
+	hitMap    map[string]int32
 }
 
 func CreateMemoryDB() ShortUrlDao {
-	return &MemoryDB{urlNdxMap: map[string]string{}, abvNdxMap: map[string]string{}, hitMap: map[string]int{}}
+	return &MemoryDB{urlNdxMap: map[string]string{}, abvNdxMap: map[string]string{}, hitMap: map[string]int32{}}
 }
 
 func (d *MemoryDB) IsLikelyOk() bool {
