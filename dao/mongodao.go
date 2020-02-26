@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"shorturl/environment"
 	"strings"
 	"sync"
 	"time"
@@ -20,7 +21,6 @@ import (
 Still TODO:
 	- retries for operations
 	- get a client in each call?
-	- parameterize timeouts
 */
 
 type MongoDB struct {
@@ -36,6 +36,11 @@ const lastAccessFieldName = "last_access"
 
 var once sync.Once
 
+func ctx() context.Context {
+	ctx, _ := context.WithTimeout(context.Background(), environment.GetEnvDurationOrDefault("timeout", 10*time.Second))
+	return ctx
+}
+
 func CreateMongoDB(uri string) ShortUrlDao {
 	client, err := mongo.NewClient(options.Client().
 		ApplyURI(uri).
@@ -44,7 +49,7 @@ func CreateMongoDB(uri string) ShortUrlDao {
 	if err != nil {
 		log.Fatalf("Couldn't create client: %v", err)
 	}
-	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx := ctx()
 	err = client.Connect(ctx)
 	if err != nil {
 		log.Fatalf("Couldn't connect: %v", err)
@@ -68,12 +73,12 @@ func CreateMongoDB(uri string) ShortUrlDao {
 }
 
 func (d *MongoDB) Cleanup() {
-	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx := ctx()
 	_ = d.client.Disconnect(ctx)
 }
 
 func (d *MongoDB) IsLikelyOk() bool {
-	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx := ctx()
 	err := d.client.Ping(ctx, readpref.Primary())
 	if err != nil {
 		log.Printf("Ping failed: %v", err)
@@ -82,8 +87,7 @@ func (d *MongoDB) IsLikelyOk() bool {
 }
 
 func (d *MongoDB) Save(abv string, url string) error {
-	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
-
+	ctx := ctx()
 	collection := d.client.Database(dbName).Collection(collectionName)
 	_, err := collection.InsertOne(ctx, bson.D{
 		{abvFieldName, abv},
@@ -99,7 +103,7 @@ func (d *MongoDB) Save(abv string, url string) error {
 }
 
 func (d *MongoDB) DeleteAbv(abv string) error {
-	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx := ctx()
 	collection := d.client.Database(dbName).Collection(collectionName)
 	m := bson.M{abvFieldName: abv}
 	_, err := collection.DeleteOne(ctx, m)
@@ -111,7 +115,7 @@ func (d *MongoDB) DeleteAbv(abv string) error {
 }
 
 func (d *MongoDB) DeleteUrl(url string) error {
-	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx := ctx()
 	collection := d.client.Database(dbName).Collection(collectionName)
 	m := bson.M{urlFieldName: url}
 	_, err := collection.DeleteOne(ctx, m)
@@ -123,7 +127,7 @@ func (d *MongoDB) DeleteUrl(url string) error {
 }
 
 func (d *MongoDB) GetUrl(abv string) (string, error) {
-	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx := ctx()
 	collection := d.client.Database(dbName).Collection(collectionName)
 	m := bson.M{abvFieldName: abv}
 	result := collection.FindOne(ctx, m)
@@ -152,7 +156,7 @@ func (d *MongoDB) GetUrl(abv string) (string, error) {
 }
 
 func (d *MongoDB) GetStats(abv string) (ShortUrl, error) {
-	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx := ctx()
 	collection := d.client.Database(dbName).Collection(collectionName)
 	m := bson.M{abvFieldName: abv}
 	result := collection.FindOne(ctx, m)
@@ -176,7 +180,7 @@ func (d *MongoDB) GetStats(abv string) (ShortUrl, error) {
 }
 
 func (d *MongoDB) GetAbv(url string) (string, error) {
-	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx := ctx()
 	collection := d.client.Database(dbName).Collection(collectionName)
 	m := bson.M{urlFieldName: url}
 	result := collection.FindOne(ctx, m)
