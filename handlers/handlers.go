@@ -3,7 +3,6 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"shorturl/dao"
@@ -71,14 +70,14 @@ func (h *Handlers) StatsHandler(writer http.ResponseWriter, request *http.Reques
 }
 
 func (h *Handlers) AddHandler(writer http.ResponseWriter, request *http.Request) {
-	body, err := ioutil.ReadAll(request.Body)
+	var url string
+	err := json.NewDecoder(request.Body).Decode(&url)
 	if err != nil {
 		writer.WriteHeader(http.StatusInternalServerError)
 		_, _ = fmt.Fprintf(writer, "Error parsing url: %v", err)
 		return
 	}
 
-	url := string(body)
 	if len(url) == 0 {
 		writer.WriteHeader(http.StatusInternalServerError)
 		_, _ = fmt.Fprint(writer, "Empty Url Passed In")

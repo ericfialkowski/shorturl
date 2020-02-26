@@ -21,6 +21,7 @@ import (
 Still TODO:
 	- retries for operations
 	- get a client in each call?
+	- make the model aware of bson
 */
 
 type MongoDB struct {
@@ -92,6 +93,7 @@ func (d *MongoDB) Save(abv string, url string) error {
 	_, err := collection.InsertOne(ctx, bson.D{
 		{abvFieldName, abv},
 		{urlFieldName, url},
+		{hitsFieldName, 0},
 	})
 
 	if err != nil {
@@ -174,7 +176,10 @@ func (d *MongoDB) GetStats(abv string) (ShortUrl, error) {
 	a := data[abvFieldName].(string)
 	h := data[hitsFieldName].(int32)
 	u := data[urlFieldName].(string)
-	la := data[lastAccessFieldName].(primitive.DateTime).Time()
+	la := time.Unix(0, 0)
+	if data[lastAccessFieldName] != nil {
+		la = data[lastAccessFieldName].(primitive.DateTime).Time()
+	}
 
 	return ShortUrl{Url: u, Abbreviation: a, Hits: h, LastAccess: la}, nil
 }
