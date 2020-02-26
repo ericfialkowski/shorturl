@@ -2,10 +2,9 @@ package status
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"time"
-
-	log "github.com/sirupsen/logrus"
 )
 
 type SimpleStatus struct {
@@ -22,6 +21,9 @@ const (
 	Critical
 	Unknown
 )
+
+const contentType string = "Content-Type"
+const appJson string = "application/json"
 
 func NewStatus() SimpleStatus {
 	s := SimpleStatus{}
@@ -63,12 +65,12 @@ func (s *SimpleStatus) Unknown(message string) {
 /*
 Handler is used for a slowly changing status where we want to automatically update the timestamp to the current request time
 */
-func (s *SimpleStatus) Handler(writer http.ResponseWriter, request *http.Request) {
-	writer.Header().Add("Content-Type", "application/json")
+func (s *SimpleStatus) Handler(writer http.ResponseWriter, _ *http.Request) {
+	writer.Header().Add(contentType, appJson)
 	writer.WriteHeader(http.StatusOK)
 
 	if err := json.NewEncoder(writer).Encode(s.Current()); err != nil {
-		log.Warnf("Couldn't encode/write status: %v", err)
+		log.Printf("Couldn't encode/write status: %v", err)
 	}
 }
 
@@ -76,11 +78,11 @@ func (s *SimpleStatus) Handler(writer http.ResponseWriter, request *http.Request
 BackgroundHandler is used when there will be a background process that updates the status and we want to see the timestamp
 of when the background task ran last
 */
-func (s *SimpleStatus) BackgroundHandler(writer http.ResponseWriter, request *http.Request) {
-	writer.Header().Add("Content-Type", "application/json")
+func (s *SimpleStatus) BackgroundHandler(writer http.ResponseWriter, _ *http.Request) {
+	writer.Header().Add(contentType, appJson)
 	writer.WriteHeader(http.StatusOK)
 
 	if err := json.NewEncoder(writer).Encode(s); err != nil {
-		log.Warnf("Couldn't encode/write status: %v", err)
+		log.Printf("Couldn't encode/write status: %v", err)
 	}
 }

@@ -65,7 +65,9 @@ func (h *Handlers) StatsHandler(writer http.ResponseWriter, request *http.Reques
 	writer.WriteHeader(http.StatusOK)
 	writer.Header().Add(contentType, appJson)
 
-	_ = json.NewEncoder(writer).Encode(stats)
+	if err := json.NewEncoder(writer).Encode(stats); err != nil {
+		logErr(err)
+	}
 }
 
 func (h *Handlers) AddHandler(writer http.ResponseWriter, request *http.Request) {
@@ -134,7 +136,7 @@ func (h *Handlers) SetUp(router *mux.Router) {
 }
 
 func logErr(err error) {
-	log.Printf("Couldn't encode/write status: %v", err)
+	log.Printf("Couldn't encode/write json: %v", err)
 }
 
 func logWrapper(wrappedHandler http.HandlerFunc) http.HandlerFunc {
