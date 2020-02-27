@@ -47,8 +47,7 @@ func CreateMongoDB(uri string) ShortUrlDao {
 		log.Fatalf("Couldn't create client: %v", err)
 	}
 	ctx := ctx()
-	err = client.Connect(ctx)
-	if err != nil {
+	if err = client.Connect(ctx); err != nil {
 		log.Fatalf("Couldn't connect: %v", err)
 	}
 
@@ -59,8 +58,7 @@ func CreateMongoDB(uri string) ShortUrlDao {
 			}, Options: options.Index().SetUnique(true).SetName("abv_uniqueness_ndx"),
 		}
 		collection := client.Database(dbName).Collection(collectionName)
-		_, err = collection.Indexes().CreateOne(ctx, mod)
-		if err != nil {
+		if _, err = collection.Indexes().CreateOne(ctx, mod); err != nil {
 			log.Printf("Error creating index %v", err)
 		}
 	})
@@ -75,20 +73,18 @@ func (d *MongoDB) Cleanup() {
 
 func (d *MongoDB) IsLikelyOk() bool {
 	ctx := ctx()
-	err := d.client.Ping(ctx, readpref.Primary())
-	if err != nil {
+	if err := d.client.Ping(ctx, readpref.Primary()); err != nil {
 		log.Printf("Ping failed: %v", err)
+		return false
 	}
-	return err == nil
+	return true
 }
 
 func (d *MongoDB) Save(abv string, url string) error {
 	ctx := ctx()
 	collection := d.client.Database(dbName).Collection(collectionName)
 	data := ShortUrl{Abbreviation: abv, Url: url, Hits: 0}
-	_, err := collection.InsertOne(ctx, data)
-
-	if err != nil {
+	if _, err := collection.InsertOne(ctx, data); err != nil {
 		if !strings.Contains(err.Error(), "E11000 duplicate") {
 			return fmt.Errorf("couldn't store (%s, %s): %v", abv, url, err)
 		}
@@ -100,8 +96,7 @@ func (d *MongoDB) DeleteAbv(abv string) error {
 	ctx := ctx()
 	collection := d.client.Database(dbName).Collection(collectionName)
 	m := bson.M{abvFieldName: abv}
-	_, err := collection.DeleteOne(ctx, m)
-	if err != nil {
+	if _, err := collection.DeleteOne(ctx, m); err != nil {
 		return fmt.Errorf("couldn't delete Abbreviation %s: %v", abv, err)
 	}
 
@@ -112,8 +107,7 @@ func (d *MongoDB) DeleteUrl(url string) error {
 	ctx := ctx()
 	collection := d.client.Database(dbName).Collection(collectionName)
 	m := bson.M{urlFieldName: url}
-	_, err := collection.DeleteOne(ctx, m)
-	if err != nil {
+	if _, err := collection.DeleteOne(ctx, m); err != nil {
 		return fmt.Errorf("couldn't delete Url %s: %v", url, err)
 	}
 
@@ -136,13 +130,11 @@ func (d *MongoDB) GetUrl(abv string) (string, error) {
 		return "", fmt.Errorf("error decoding return %s: %v", abv, result.Err())
 	}
 
-	update := bson.D{{"$inc", bson.D{{hitsFieldName, 1}}},
-		{"$currentDate", bson.D{{lastAccessFieldName, true}}},
-	}
-
 	go func() {
-		_, err := collection.UpdateOne(ctx, m, update)
-		if err != nil {
+		update := bson.D{{"$inc", bson.D{{hitsFieldName, 1}}},
+			{"$currentDate", bson.D{{lastAccessFieldName, true}}},
+		}
+		if _, err := collection.UpdateOne(ctx, m, update); err != nil {
 			log.Printf("Error updating doc %v", err)
 		}
 	}()

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"shorturl/dao"
 	"shorturl/environment"
 
@@ -27,7 +28,7 @@ func CreateHandlers(d dao.ShortUrlDao) Handlers {
 func (h *Handlers) GetHandler(writer http.ResponseWriter, request *http.Request) {
 	vars := mux.Vars(request)
 	abv := vars["abv"]
-	url, err := h.dao.GetUrl(abv)
+	u, err := h.dao.GetUrl(abv)
 
 	if err != nil {
 		writer.WriteHeader(http.StatusInternalServerError)
@@ -35,13 +36,13 @@ func (h *Handlers) GetHandler(writer http.ResponseWriter, request *http.Request)
 		return
 	}
 
-	if len(url) == 0 {
+	if len(u) == 0 {
 		writer.WriteHeader(http.StatusNotFound)
 		_, _ = fmt.Fprint(writer, "No link found")
 		return
 	}
 
-	http.Redirect(writer, request, url, http.StatusFound)
+	http.Redirect(writer, request, u, http.StatusFound)
 }
 
 func (h *Handlers) StatsHandler(writer http.ResponseWriter, request *http.Request) {
@@ -70,36 +71,43 @@ func (h *Handlers) StatsHandler(writer http.ResponseWriter, request *http.Reques
 }
 
 func (h *Handlers) AddHandler(writer http.ResponseWriter, request *http.Request) {
-	var url string
-	err := json.NewDecoder(request.Body).Decode(&url)
-	if err != nil {
+	var u string
+
+	if err := json.NewDecoder(request.Body).Decode(&u); err != nil {
 		writer.WriteHeader(http.StatusInternalServerError)
 		_, _ = fmt.Fprintf(writer, "Error parsing url: %v", err)
 		return
 	}
 
-	if len(url) == 0 {
+	if len(u) == 0 {
 		writer.WriteHeader(http.StatusInternalServerError)
 		_, _ = fmt.Fprint(writer, "Empty Url Passed In")
 		return
 	}
 
-	abv, err := h.dao.GetAbv(url)
+	if parsedUrl, err := url.ParseRequestURI(u); err != nil ||
+		parsedUrl.Scheme == "" ||
+		parsedUrl.Host == "" {
+		writer.WriteHeader(http.StatusInternalServerError)
+		_, _ = fmt.Fprint(writer, "Invalid Url Passed In")
+		return
+	}
+
+	abv, _ := h.dao.GetAbv(u)
 	if len(abv) > 0 {
 		writer.WriteHeader(http.StatusOK)
 		_, _ = fmt.Fprintf(writer, "%s%s%s", request.Host, request.RequestURI, abv)
 		return
 	}
 
-	abv, err = dao.CreateAbbreviation(url, h.dao)
+	abv, err := dao.CreateAbbreviation(u, h.dao)
 	if err != nil {
 		writer.WriteHeader(http.StatusInternalServerError)
 		_, _ = fmt.Fprintf(writer, "Error creating abbreviation: %v", err)
 		return
 	}
 
-	err = h.dao.Save(abv, url)
-	if err != nil {
+	if err := h.dao.Save(abv, u); err != nil {
 		writer.WriteHeader(http.StatusInternalServerError)
 		_, _ = fmt.Fprintf(writer, "Error saving url: %v", err)
 		return

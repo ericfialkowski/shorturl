@@ -57,8 +57,7 @@ func main() {
 	//
 	// blocking call, all setup needs to be done before this call
 	//
-	err := http.ListenAndServe(bindAddr, r)
-	if err != nil {
+	if err := http.ListenAndServe(bindAddr, r); err != nil {
 		log.Fatalf("Error listening: %v", err)
 	}
 }

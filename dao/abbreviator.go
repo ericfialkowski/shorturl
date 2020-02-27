@@ -18,9 +18,9 @@ func randString() string {
 func CreateAbbreviation(url string, dao ShortUrlDao) (string, error) {
 	abv := randString()
 
-	u, err := dao.GetUrl(abv)
+	u, _ := dao.GetUrl(abv)
 	for len(u) != 0 && url != u {
-		u, err = dao.GetUrl(abv)
+		_, err := dao.GetUrl(abv)
 		if err != nil {
 			return "", fmt.Errorf("error checking abbeviation %v", err)
 		}

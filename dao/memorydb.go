@@ -1,5 +1,6 @@
 package dao
 
+// TODO: add last access, make url & abv be maps to a common object
 type MemoryDB struct {
 	urlNdxMap map[string]string
 	abvNdxMap map[string]string
