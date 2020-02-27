@@ -9,8 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"go.mongodb.org/mongo-driver/bson/primitive"
-
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -20,8 +18,6 @@ import (
 /*
 Still TODO:
 	- retries for operations
-	- get a client in each call?
-	- make the model aware of bson
 */
 
 type MongoDB struct {
@@ -69,7 +65,6 @@ func CreateMongoDB(uri string) ShortUrlDao {
 		}
 	})
 
-	//defer client.Disconnect(ctx)
 	return &MongoDB{client: *client}
 }
 
@@ -90,11 +85,8 @@ func (d *MongoDB) IsLikelyOk() bool {
 func (d *MongoDB) Save(abv string, url string) error {
 	ctx := ctx()
 	collection := d.client.Database(dbName).Collection(collectionName)
-	_, err := collection.InsertOne(ctx, bson.D{
-		{abvFieldName, abv},
-		{urlFieldName, url},
-		{hitsFieldName, 0},
-	})
+	data := ShortUrl{Abbreviation: abv, Url: url, Hits: 0}
+	_, err := collection.InsertOne(ctx, data)
 
 	if err != nil {
 		if !strings.Contains(err.Error(), "E11000 duplicate") {
@@ -139,7 +131,7 @@ func (d *MongoDB) GetUrl(abv string) (string, error) {
 		return "", nil
 	}
 
-	var data bson.M
+	var data ShortUrl
 	if err := result.Decode(&data); err != nil {
 		return "", fmt.Errorf("error decoding return %s: %v", abv, result.Err())
 	}
@@ -154,7 +146,7 @@ func (d *MongoDB) GetUrl(abv string) (string, error) {
 			log.Printf("Error updating doc %v", err)
 		}
 	}()
-	return data[urlFieldName].(string), nil
+	return data.Url, nil
 }
 
 func (d *MongoDB) GetStats(abv string) (ShortUrl, error) {
@@ -168,20 +160,12 @@ func (d *MongoDB) GetStats(abv string) (ShortUrl, error) {
 		return ShortUrl{}, nil
 	}
 
-	var data bson.M
+	var data ShortUrl
 	if err := result.Decode(&data); err != nil {
 		return ShortUrl{}, fmt.Errorf("error decoding return %s: %v", abv, result.Err())
 	}
 
-	a := data[abvFieldName].(string)
-	h := data[hitsFieldName].(int32)
-	u := data[urlFieldName].(string)
-	la := time.Unix(0, 0)
-	if data[lastAccessFieldName] != nil {
-		la = data[lastAccessFieldName].(primitive.DateTime).Time()
-	}
-
-	return ShortUrl{Url: u, Abbreviation: a, Hits: h, LastAccess: la}, nil
+	return data, nil
 }
 
 func (d *MongoDB) GetAbv(url string) (string, error) {
@@ -195,10 +179,10 @@ func (d *MongoDB) GetAbv(url string) (string, error) {
 		return "", nil
 	}
 
-	var data bson.M
+	var data ShortUrl
 	if err := result.Decode(&data); err != nil {
 		return "", fmt.Errorf("error decoding return %s: %v", url, result.Err())
 	}
 
-	return fmt.Sprintf("%v", data[abvFieldName]), nil
+	return data.Abbreviation, nil
 }
