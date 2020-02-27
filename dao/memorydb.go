@@ -1,14 +1,14 @@
 package dao
 
-// TODO: add last access, make url & abv be maps to a common object
+import "time"
+
 type MemoryDB struct {
-	urlNdxMap map[string]string
-	abvNdxMap map[string]string
-	hitMap    map[string]int32
+	urlNdxMap map[string]*ShortUrl
+	abvNdxMap map[string]*ShortUrl
 }
 
 func CreateMemoryDB() ShortUrlDao {
-	return &MemoryDB{urlNdxMap: map[string]string{}, abvNdxMap: map[string]string{}, hitMap: map[string]int32{}}
+	return &MemoryDB{urlNdxMap: map[string]*ShortUrl{}, abvNdxMap: map[string]*ShortUrl{}}
 }
 
 func (d *MemoryDB) IsLikelyOk() bool {
@@ -16,41 +16,46 @@ func (d *MemoryDB) IsLikelyOk() bool {
 }
 
 func (d *MemoryDB) Save(abv string, url string) error {
-	d.urlNdxMap[url] = abv
-	d.abvNdxMap[abv] = url
-	d.hitMap[abv] = 0
+	su := ShortUrl{Abbreviation: abv, Url: url, Hits: 0}
+	d.urlNdxMap[url] = &su
+	d.abvNdxMap[abv] = &su
 	return nil
 }
 
 func (d *MemoryDB) DeleteAbv(abv string) error {
-	url := d.abvNdxMap[abv]
+	su := d.abvNdxMap[abv]
 	delete(d.abvNdxMap, abv)
-	delete(d.urlNdxMap, url)
+	delete(d.urlNdxMap, su.Url)
 	return nil
 }
 
 func (d *MemoryDB) DeleteUrl(url string) error {
-	abv := d.urlNdxMap[url]
-	delete(d.abvNdxMap, abv)
+	su := d.urlNdxMap[url]
+	delete(d.abvNdxMap, su.Abbreviation)
 	delete(d.urlNdxMap, url)
 	return nil
 }
 
 func (d *MemoryDB) GetUrl(abv string) (string, error) {
-	u := d.abvNdxMap[abv]
-	if len(u) > 0 {
-		i := d.hitMap[abv]
-		d.hitMap[abv] = i + 1
+	su := d.abvNdxMap[abv]
+	if su != nil && len(su.Url) > 0 {
+		i := su.Hits
+		su.Hits = i + 1
+		su.LastAccess = time.Now()
+		return su.Url, nil
 	}
-	return u, nil
+	return "", nil
 }
 
 func (d *MemoryDB) GetAbv(url string) (string, error) {
-	return d.urlNdxMap[url], nil
+	if d.urlNdxMap[url] != nil {
+		return d.urlNdxMap[url].Abbreviation, nil
+	}
+	return "", nil
 }
 
 func (d *MemoryDB) GetStats(abv string) (ShortUrl, error) {
-	return ShortUrl{Abbreviation: abv, Url: d.abvNdxMap[abv], Hits: d.hitMap[abv]}, nil
+	return *d.abvNdxMap[abv], nil
 }
 
 func (d *MemoryDB) Cleanup() {
