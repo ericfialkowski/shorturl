@@ -1,0 +1,11 @@
+# Generic stuff
+.git
+.cache
+tests
+build
+*.xml
+docker
+Dockerfile
+.gitignore
+.idea
+README.md
