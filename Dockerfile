@@ -1,5 +1,5 @@
 # Stage 1 Build
-FROM golang:stretch as build
+FROM golang:1.14 as build
 
 WORKDIR /go/src/app
 COPY . .
@@ -12,5 +12,6 @@ COPY --from=build /go/src/app/shorturl /shorturl
 EXPOSE 8800
 
 ENV mongo_uri ""
+ENV logrequests false
 
 CMD ["/shorturl"]
