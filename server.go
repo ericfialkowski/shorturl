@@ -23,6 +23,7 @@ func main() {
 	var db dao.ShortUrlDao
 	if len(mongoUri) == 0 {
 		db = dao.CreateMemoryDB()
+		log.Println("Warning: running with in-memory database")
 	} else {
 		db = dao.CreateMongoDB(mongoUri)
 	}
