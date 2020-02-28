@@ -55,6 +55,9 @@ func (d *MemoryDB) GetAbv(url string) (string, error) {
 }
 
 func (d *MemoryDB) GetStats(abv string) (ShortUrl, error) {
+	if d.abvNdxMap[abv] == nil {
+		return ShortUrl{}, nil
+	}
 	return *d.abvNdxMap[abv], nil
 }
 
