@@ -25,7 +25,7 @@ func CreateHandlers(d dao.ShortUrlDao) Handlers {
 	return Handlers{dao: d}
 }
 
-func (h *Handlers) GetHandler(writer http.ResponseWriter, request *http.Request) {
+func (h *Handlers) getHandler(writer http.ResponseWriter, request *http.Request) {
 	vars := mux.Vars(request)
 	abv := vars["abv"]
 	u, err := h.dao.GetUrl(abv)
@@ -45,7 +45,7 @@ func (h *Handlers) GetHandler(writer http.ResponseWriter, request *http.Request)
 	http.Redirect(writer, request, u, http.StatusFound)
 }
 
-func (h *Handlers) StatsHandler(writer http.ResponseWriter, request *http.Request) {
+func (h *Handlers) statsHandler(writer http.ResponseWriter, request *http.Request) {
 	vars := mux.Vars(request)
 	abv := vars["abv"]
 	stats, err := h.dao.GetStats(abv)
@@ -70,7 +70,7 @@ func (h *Handlers) StatsHandler(writer http.ResponseWriter, request *http.Reques
 	}
 }
 
-func (h *Handlers) AddHandler(writer http.ResponseWriter, request *http.Request) {
+func (h *Handlers) addHandler(writer http.ResponseWriter, request *http.Request) {
 	var u string
 
 	if err := json.NewDecoder(request.Body).Decode(&u); err != nil {
@@ -117,7 +117,7 @@ func (h *Handlers) AddHandler(writer http.ResponseWriter, request *http.Request)
 	_, _ = fmt.Fprintf(writer, "%s%s%s", request.Host, request.RequestURI, abv)
 }
 
-func (h *Handlers) DeleteHandler(writer http.ResponseWriter, request *http.Request) {
+func (h *Handlers) deleteHandler(writer http.ResponseWriter, request *http.Request) {
 	vars := mux.Vars(request)
 	abv := vars["abv"]
 	err := h.dao.DeleteAbv(abv)
@@ -136,10 +136,10 @@ func (h *Handlers) DeleteHandler(writer http.ResponseWriter, request *http.Reque
 }
 
 func (h *Handlers) SetUp(router *mux.Router) {
-	router.HandleFunc(StatsPath, logWrapper(h.StatsHandler)).Methods(http.MethodGet)
-	router.HandleFunc(AppPath, logWrapper(h.DeleteHandler)).Methods(http.MethodDelete)
-	router.HandleFunc(AppPath, logWrapper(h.GetHandler)).Methods(http.MethodGet)
-	router.HandleFunc("/", logWrapper(h.AddHandler)).Methods(http.MethodPost)
+	router.HandleFunc(StatsPath, logWrapper(h.statsHandler)).Methods(http.MethodGet)
+	router.HandleFunc(AppPath, logWrapper(h.deleteHandler)).Methods(http.MethodDelete)
+	router.HandleFunc(AppPath, logWrapper(h.getHandler)).Methods(http.MethodGet)
+	router.HandleFunc("/", logWrapper(h.addHandler)).Methods(http.MethodPost)
 }
 
 func logErr(err error) {
