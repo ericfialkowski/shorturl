@@ -1,6 +1,9 @@
 package dao
 
-import "strings"
+import (
+	"log"
+	"strings"
+)
 
 var wordMap = map[string]bool{
 	"2g1c":           true,
@@ -689,6 +692,8 @@ func BadWord(s string) bool {
 
 	for key := range wordMap {
 		if strings.Contains(s, key) {
+			log.Printf("New bad word found: %s", s) // eventually add new words found to the compile time map
+			wordMap[s] = true
 			return true
 		}
 	}
