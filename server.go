@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"log"
-	"math/rand"
 	"net/http"
 	"shorturl/dao"
 	"shorturl/environment"
@@ -19,7 +18,6 @@ var ip = environment.GetEnvStringOrDefault("ip", "")
 var mongoUri = environment.GetEnvStringOrDefault("mongo_uri", "") // mongodb://root:p%40ssw0rd!@localhost/admin
 
 func main() {
-	rand.Seed(time.Now().UnixNano())
 	var db dao.ShortUrlDao
 	if len(mongoUri) == 0 {
 		db = dao.CreateMemoryDB()
