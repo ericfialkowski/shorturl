@@ -16,7 +16,7 @@ func (d *MemoryDB) IsLikelyOk() bool {
 }
 
 func (d *MemoryDB) Save(abv string, url string) error {
-	su := ShortUrl{Abbreviation: abv, Url: url, Hits: 0}
+	su := ShortUrl{Abbreviation: abv, Url: url, Hits: 0, DailyHits: map[string]int{}}
 	d.urlNdxMap[url] = &su
 	d.abvNdxMap[abv] = &su
 	return nil
@@ -42,6 +42,8 @@ func (d *MemoryDB) GetUrl(abv string) (string, error) {
 		i := su.Hits
 		su.Hits = i + 1
 		su.LastAccess = time.Now()
+		date := Date()
+		su.DailyHits[date] = su.DailyHits[date] + 1
 		return su.Url, nil
 	}
 	return "", nil

@@ -131,11 +131,10 @@ func (d *MongoDB) GetUrl(abv string) (string, error) {
 		return "", fmt.Errorf("error decoding return %s: %v", abv, result.Err())
 	}
 
-	date := time.Now().Format("2006-01-02")
 	go func() {
 		update := bson.D{{"$inc", bson.D{{hitsFieldName, 1}}},
 			{"$currentDate", bson.D{{lastAccessFieldName, true}}},
-			{"$inc", bson.D{{dailyHitsFieldName + "." + date, 1}}},
+			{"$inc", bson.D{{dailyHitsFieldName + "." + Date(), 1}}},
 		}
 		if _, err := collection.UpdateOne(ctx, abvKey, update); err != nil {
 			log.Printf("Error updating doc %v", err)

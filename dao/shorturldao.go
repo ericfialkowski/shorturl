@@ -1,5 +1,7 @@
 package dao
 
+import "time"
+
 type ShortUrlDao interface {
 	IsLikelyOk() bool
 	Save(abv string, url string) error
@@ -9,4 +11,8 @@ type ShortUrlDao interface {
 	GetAbv(url string) (string, error)
 	GetStats(abv string) (ShortUrl, error)
 	Cleanup()
+}
+
+func Date() string {
+	return time.Now().Format("2006-01-02")
 }
