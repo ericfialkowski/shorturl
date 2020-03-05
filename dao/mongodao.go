@@ -30,6 +30,7 @@ const urlFieldName = "url"
 const abvFieldName = "abv"
 const hitsFieldName = "hits"
 const lastAccessFieldName = "last_access"
+const dailyHitsFieldName = "daily_hits"
 
 var once sync.Once
 
@@ -117,8 +118,8 @@ func (d *MongoDB) DeleteUrl(url string) error {
 func (d *MongoDB) GetUrl(abv string) (string, error) {
 	ctx := ctx()
 	collection := d.client.Database(dbName).Collection(collectionName)
-	m := bson.M{abvFieldName: abv}
-	result := collection.FindOne(ctx, m)
+	abvKey := bson.M{abvFieldName: abv}
+	result := collection.FindOne(ctx, abvKey)
 
 	if result.Err() != nil {
 		//return false, fmt.Errorf("error looking up %s: %v", Abbreviation, result.Err())
@@ -130,11 +131,13 @@ func (d *MongoDB) GetUrl(abv string) (string, error) {
 		return "", fmt.Errorf("error decoding return %s: %v", abv, result.Err())
 	}
 
+	date := time.Now().Format("2006-01-02")
 	go func() {
 		update := bson.D{{"$inc", bson.D{{hitsFieldName, 1}}},
 			{"$currentDate", bson.D{{lastAccessFieldName, true}}},
+			{"$inc", bson.D{{dailyHitsFieldName + "." + date, 1}}},
 		}
-		if _, err := collection.UpdateOne(ctx, m, update); err != nil {
+		if _, err := collection.UpdateOne(ctx, abvKey, update); err != nil {
 			log.Printf("Error updating doc %v", err)
 		}
 	}()
