@@ -66,7 +66,7 @@ func (h *Handlers) statsHandler(writer http.ResponseWriter, request *http.Reques
 	writer.Header().Add(contentType, appJson)
 
 	if err := json.NewEncoder(writer).Encode(stats); err != nil {
-		logErr(err)
+		logJsonError(err)
 	}
 }
 
@@ -131,7 +131,7 @@ func (h *Handlers) deleteHandler(writer http.ResponseWriter, request *http.Reque
 	writer.Header().Add(contentType, appJson)
 	writer.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(writer).Encode("deleted"); err != nil {
-		logErr(err)
+		logJsonError(err)
 	}
 }
 
@@ -143,14 +143,14 @@ func (h *Handlers) SetUp(router *mux.Router) {
 	router.Use(logWrapper)
 }
 
-func logErr(err error) {
+func logJsonError(err error) {
 	log.Printf("Couldn't encode/write json: %v", err)
 }
 
 func logWrapper(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if environment.GetEnvBoolOrDefault("logrequests", false) {
-			log.Println(request.RequestURI)
+			log.Printf("access:  %s - %s\n", request.Method, request.RequestURI)
 		}
 		next.ServeHTTP(writer, request)
 	})
