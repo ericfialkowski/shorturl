@@ -33,7 +33,7 @@ func main() {
 	// add status handler
 	s := status.NewStatus()
 	r.HandleFunc("/status", s.BackgroundHandler)
-	ticker := time.NewTicker(time.Second * 30)
+	ticker := time.NewTicker(environment.GetEnvDurationOrDefault("status_interval", time.Second*30))
 	go func() {
 		for range ticker.C {
 			if !db.IsLikelyOk() {
@@ -56,9 +56,9 @@ func main() {
 	srv := &http.Server{
 		Addr: bindAddr,
 		// Good practice to set timeouts to avoid Slowloris attacks.
-		WriteTimeout: environment.GetEnvDurationOrDefault("httpwritetimeout", time.Second*10),
-		ReadTimeout:  environment.GetEnvDurationOrDefault("httpreadtimeout", time.Second*15),
-		IdleTimeout:  environment.GetEnvDurationOrDefault("httpidletimeout", time.Second*60),
+		WriteTimeout: environment.GetEnvDurationOrDefault("http_write_timeout", time.Second*10),
+		ReadTimeout:  environment.GetEnvDurationOrDefault("http_read_timeout", time.Second*15),
+		IdleTimeout:  environment.GetEnvDurationOrDefault("http_idle_timeout", time.Second*60),
 		Handler:      r, // Pass our instance of gorilla/mux in.
 	}
 

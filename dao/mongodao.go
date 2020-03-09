@@ -18,6 +18,7 @@ import (
 /*
 Still TODO:
 	- retries for operations
+	- unique index for the urls
 */
 
 type MongoDB struct {
@@ -35,7 +36,7 @@ const dailyHitsFieldName = "daily_hits"
 var once sync.Once
 
 func ctx() context.Context {
-	ctx, _ := context.WithTimeout(context.Background(), environment.GetEnvDurationOrDefault("timeout", 10*time.Second))
+	ctx, _ := context.WithTimeout(context.Background(), environment.GetEnvDurationOrDefault("mongo_timeout", 10*time.Second))
 	return ctx
 }
 
