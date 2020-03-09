@@ -136,21 +136,22 @@ func (h *Handlers) deleteHandler(writer http.ResponseWriter, request *http.Reque
 }
 
 func (h *Handlers) SetUp(router *mux.Router) {
-	router.HandleFunc(StatsPath, logWrapper(h.statsHandler)).Methods(http.MethodGet)
-	router.HandleFunc(AppPath, logWrapper(h.deleteHandler)).Methods(http.MethodDelete)
-	router.HandleFunc(AppPath, logWrapper(h.getHandler)).Methods(http.MethodGet)
-	router.HandleFunc("/", logWrapper(h.addHandler)).Methods(http.MethodPost)
+	router.HandleFunc(StatsPath, h.statsHandler).Methods(http.MethodGet)
+	router.HandleFunc(AppPath, h.deleteHandler).Methods(http.MethodDelete)
+	router.HandleFunc(AppPath, h.getHandler).Methods(http.MethodGet)
+	router.HandleFunc("/", h.addHandler).Methods(http.MethodPost)
+	router.Use(logWrapper)
 }
 
 func logErr(err error) {
 	log.Printf("Couldn't encode/write json: %v", err)
 }
 
-func logWrapper(wrappedHandler http.HandlerFunc) http.HandlerFunc {
-	return func(writer http.ResponseWriter, request *http.Request) {
+func logWrapper(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if environment.GetEnvBoolOrDefault("logrequests", false) {
-			log.Printf("%s - %s\n", request.Method, request.RequestURI)
+			log.Println(request.RequestURI)
 		}
-		wrappedHandler(writer, request)
-	}
+		next.ServeHTTP(writer, request)
+	})
 }
