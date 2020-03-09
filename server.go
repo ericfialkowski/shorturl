@@ -53,10 +53,19 @@ func main() {
 	bindAddr := fmt.Sprintf("%s:%d", ip, port)
 	log.Printf("Listening to %s", bindAddr)
 
+	srv := &http.Server{
+		Addr: bindAddr,
+		// Good practice to set timeouts to avoid Slowloris attacks.
+		WriteTimeout: environment.GetEnvDurationOrDefault("httpwritetimeout", time.Second*10),
+		ReadTimeout:  environment.GetEnvDurationOrDefault("httpreadtimeout", time.Second*15),
+		IdleTimeout:  environment.GetEnvDurationOrDefault("httpidletimeout", time.Second*60),
+		Handler:      r, // Pass our instance of gorilla/mux in.
+	}
+
 	//
 	// blocking call, all setup needs to be done before this call
 	//
-	if err := http.ListenAndServe(bindAddr, r); err != nil {
+	if err := srv.ListenAndServe(); err != nil {
 		log.Fatalf("Error listening: %v", err)
 	}
 }

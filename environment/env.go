@@ -38,6 +38,10 @@ func GetEnvIntOrDefault(key string, defaultValue int) int {
 	return r
 }
 
+/*
+	GetEnvDurationOrDefault returns a time.Duration that is determined by using the
+	time.ParseDuration function.
+*/
 func GetEnvDurationOrDefault(key string, defaultValue time.Duration) time.Duration {
 	envVal := os.Getenv(key)
 	if envVal == "" {
