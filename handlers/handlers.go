@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"shorturl/dao"
 	"shorturl/environment"
+	"shorturl/status"
 	"sync/atomic"
 	"time"
 
@@ -19,23 +20,31 @@ const appJson string = "application/json"
 const AppPath string = "/{abv}"
 const StatsPath string = "/{abv}/stats"
 const MetricsPath string = "/metrics"
+const StatusPath string = "/status"
 
 type Handlers struct {
 	dao       dao.ShortUrlDao
 	metrics   Metrics
 	startTime time.Time
+	status    status.SimpleStatus
 }
 
 type Metrics struct {
-	Hits   uint64 `json:"hits"`
-	Uptime string `json:"uptime"`
+	Redirects uint64 `json:"redirect_counts"`
+	UrlStats  uint64 `json:"redirect_stats_counts"`
+	NewUrls   uint64 `json:"new_url_counts"`
+	Deletes   uint64 `json:"delete_counts"`
+	Metrics   uint64 `json:"metric_request_counts"`
+	Status    uint64 `json:"stats_requests_counts"`
+	Uptime    string `json:"uptime"`
 }
 
-func CreateHandlers(d dao.ShortUrlDao) Handlers {
-	return Handlers{dao: d, metrics: Metrics{Hits: 0}, startTime: time.Now()}
+func CreateHandlers(d dao.ShortUrlDao, s status.SimpleStatus) Handlers {
+	return Handlers{dao: d, metrics: Metrics{}, startTime: time.Now(), status: s}
 }
 
 func (h *Handlers) getHandler(writer http.ResponseWriter, request *http.Request) {
+	atomic.AddUint64(&h.metrics.Redirects, 1)
 	vars := mux.Vars(request)
 	abv := vars["abv"]
 	u, err := h.dao.GetUrl(abv)
@@ -56,6 +65,7 @@ func (h *Handlers) getHandler(writer http.ResponseWriter, request *http.Request)
 }
 
 func (h *Handlers) statsHandler(writer http.ResponseWriter, request *http.Request) {
+	atomic.AddUint64(&h.metrics.UrlStats, 1)
 	vars := mux.Vars(request)
 	abv := vars["abv"]
 	stats, err := h.dao.GetStats(abv)
@@ -81,6 +91,7 @@ func (h *Handlers) statsHandler(writer http.ResponseWriter, request *http.Reques
 }
 
 func (h *Handlers) addHandler(writer http.ResponseWriter, request *http.Request) {
+	atomic.AddUint64(&h.metrics.NewUrls, 1)
 	var u string
 
 	if err := json.NewDecoder(request.Body).Decode(&u); err != nil {
@@ -128,6 +139,7 @@ func (h *Handlers) addHandler(writer http.ResponseWriter, request *http.Request)
 }
 
 func (h *Handlers) deleteHandler(writer http.ResponseWriter, request *http.Request) {
+	atomic.AddUint64(&h.metrics.Deletes, 1)
 	vars := mux.Vars(request)
 	abv := vars["abv"]
 	err := h.dao.DeleteAbv(abv)
@@ -146,16 +158,18 @@ func (h *Handlers) deleteHandler(writer http.ResponseWriter, request *http.Reque
 }
 
 func (h *Handlers) SetUp(router *mux.Router) {
+	router.HandleFunc(StatusPath, h.status.BackgroundHandler)
 	router.HandleFunc(MetricsPath, h.metricsHandler).Methods(http.MethodGet)
 	router.HandleFunc(StatsPath, h.statsHandler).Methods(http.MethodGet)
 	router.HandleFunc(AppPath, h.deleteHandler).Methods(http.MethodDelete)
 	router.HandleFunc(AppPath, h.getHandler).Methods(http.MethodGet)
 	router.HandleFunc("/", h.addHandler).Methods(http.MethodPost)
 	router.Use(logWrapper)
-	router.Use(h.metrics.HitsCounterWrapper)
+	router.Use(h.hitsCounterWrapper)
 }
 
 func (h *Handlers) metricsHandler(writer http.ResponseWriter, _ *http.Request) {
+	atomic.AddUint64(&h.metrics.Metrics, 1)
 	writer.Header().Add(contentType, appJson)
 	writer.WriteHeader(http.StatusOK)
 	m := h.metrics
@@ -178,10 +192,12 @@ func logWrapper(next http.Handler) http.Handler {
 	})
 }
 
-func (m *Metrics) HitsCounterWrapper(next http.Handler) http.Handler {
+func (h *Handlers) hitsCounterWrapper(next http.Handler) http.Handler {
+	// using this mechanism since the handler is in a different package
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		// could skip metrics & status endpoints
-		atomic.AddUint64(&m.Hits, 1)
+		if request.RequestURI == StatusPath {
+			atomic.AddUint64(&h.metrics.Status, 1)
+		}
 		next.ServeHTTP(writer, request)
 	})
 }

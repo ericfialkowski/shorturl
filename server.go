@@ -35,7 +35,6 @@ func main() {
 
 	// add status handler
 	s := status.NewStatus()
-	r.HandleFunc("/status", s.BackgroundHandler)
 	ticker := time.NewTicker(environment.GetEnvDurationOrDefault("status_interval", time.Second*30))
 	go func() {
 		for range ticker.C {
@@ -50,7 +49,7 @@ func main() {
 	//
 	// add other handlers
 	//
-	h := handlers.CreateHandlers(db)
+	h := handlers.CreateHandlers(db, s)
 	h.SetUp(r)
 
 	bindAddr := fmt.Sprintf("%s:%d", ip, port)
@@ -71,6 +70,9 @@ func main() {
 			log.Println(err)
 		}
 	}()
+
+	// we're ready to accept requests
+	s.Ok("All good")
 
 	c := make(chan os.Signal, 1)
 	// We'll accept graceful shutdowns when quit via SIGINT (Ctrl+C)
