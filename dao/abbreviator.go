@@ -25,6 +25,7 @@ func CreateAbbreviation(url string, dao ShortUrlDao) (string, error) {
 			return "", fmt.Errorf("error checking abbreviation %v", err)
 		}
 		abv = randString()
+		u, _ = dao.GetUrl(abv)
 	}
 
 	return abv, nil
