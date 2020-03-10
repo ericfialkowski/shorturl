@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"shorturl/dao"
 	"shorturl/environment"
+	"sync/atomic"
+	"time"
 
 	"github.com/gorilla/mux"
 )
@@ -16,13 +18,21 @@ const contentType string = "Content-Type"
 const appJson string = "application/json"
 const AppPath string = "/{abv}"
 const StatsPath string = "/{abv}/stats"
+const MetricsPath string = "/metrics"
 
 type Handlers struct {
-	dao dao.ShortUrlDao
+	dao       dao.ShortUrlDao
+	metrics   Metrics
+	startTime time.Time
+}
+
+type Metrics struct {
+	Hits   uint64 `json:"hits"`
+	Uptime string `json:"uptime"`
 }
 
 func CreateHandlers(d dao.ShortUrlDao) Handlers {
-	return Handlers{dao: d}
+	return Handlers{dao: d, metrics: Metrics{Hits: 0}, startTime: time.Now()}
 }
 
 func (h *Handlers) getHandler(writer http.ResponseWriter, request *http.Request) {
@@ -136,11 +146,23 @@ func (h *Handlers) deleteHandler(writer http.ResponseWriter, request *http.Reque
 }
 
 func (h *Handlers) SetUp(router *mux.Router) {
+	router.HandleFunc(MetricsPath, h.metricsHandler).Methods(http.MethodGet)
 	router.HandleFunc(StatsPath, h.statsHandler).Methods(http.MethodGet)
 	router.HandleFunc(AppPath, h.deleteHandler).Methods(http.MethodDelete)
 	router.HandleFunc(AppPath, h.getHandler).Methods(http.MethodGet)
 	router.HandleFunc("/", h.addHandler).Methods(http.MethodPost)
 	router.Use(logWrapper)
+	router.Use(h.metrics.HitsCounterWrapper)
+}
+
+func (h *Handlers) metricsHandler(writer http.ResponseWriter, _ *http.Request) {
+	writer.Header().Add(contentType, appJson)
+	writer.WriteHeader(http.StatusOK)
+	m := h.metrics
+	m.Uptime = time.Since(h.startTime).String()
+	if err := json.NewEncoder(writer).Encode(m); err != nil {
+		logJsonError(err)
+	}
 }
 
 func logJsonError(err error) {
@@ -152,6 +174,14 @@ func logWrapper(next http.Handler) http.Handler {
 		if environment.GetEnvBoolOrDefault("logrequests", false) {
 			log.Printf("access:  %s - %s\n", request.Method, request.RequestURI)
 		}
+		next.ServeHTTP(writer, request)
+	})
+}
+
+func (m *Metrics) HitsCounterWrapper(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		// could skip metrics & status endpoints
+		atomic.AddUint64(&m.Hits, 1)
 		next.ServeHTTP(writer, request)
 	})
 }
