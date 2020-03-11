@@ -135,7 +135,13 @@ func (h *Handlers) addHandler(writer http.ResponseWriter, request *http.Request)
 	}
 
 	writer.WriteHeader(http.StatusCreated)
-	_, _ = fmt.Fprintf(writer, "%s%s%s", request.Host, request.RequestURI, abv)
+	r := map[string]string{}
+	r["abv"] = abv
+	r["url"] = fmt.Sprintf("%s%s%s", request.Host, request.RequestURI, abv)
+
+	if err := json.NewEncoder(writer).Encode(r); err != nil {
+		logJsonError(err)
+	}
 }
 
 func (h *Handlers) deleteHandler(writer http.ResponseWriter, request *http.Request) {
