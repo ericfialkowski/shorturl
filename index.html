@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Url Shortener</title>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+</head>
+<body>
+<h2>Add Url</h2>
+<label>
+    <input id="newUrl" name="newUrl"/>
+</label>
+<button id="newUrlBtn">Add</button>
+<p id="newUrlResults"></p>
+<hr>
+<script>
+    $("#newUrlBtn").click(function () {
+            $("#newUrlResults").empty();
+            const u = $("#newUrl").val();
+            const posting = $.post("/", '"' + u + '"');
+            posting.done( function ( data ) {
+                const r = $.parseJSON(data);
+                    let h = "<table>" +
+                        "<tr><td>Abbreviation</td><td>" + r.abv + "</td></tr>" +
+                        "<tr><td>Link</td><td><a target='_blank' href='" + r.url_link + "'>" + r.url_link + "</a></td></tr>" +
+                        "<tr><td>Stats Link</td><td><a target='_blank' href='" + r.stats_link +  "'>" + r.stats_link + "</a></td></tr>" +
+                        "</table>";
+                    $("#newUrlResults").append(h);
+                });
+            posting.fail( function ( data ) {
+                console.log(data);
+                $("#newUrlResults").append("Error: " + data.responseText);
+            });
+        }
+    )
+</script>
+</body>
+</html>

@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"log"
 	"net/http"
 	"net/url"
@@ -117,7 +118,13 @@ func (h *Handlers) addHandler(writer http.ResponseWriter, request *http.Request)
 	abv, _ := h.dao.GetAbv(u)
 	if len(abv) > 0 {
 		writer.WriteHeader(http.StatusOK)
-		_, _ = fmt.Fprintf(writer, "%s%s%s", request.Host, request.RequestURI, abv)
+		r := map[string]string{}
+		r["abv"] = abv
+		r["url_link"] = fmt.Sprintf("/%s", abv)
+		r["stats_link"] = fmt.Sprintf("%s/stats", abv)
+		if err := json.NewEncoder(writer).Encode(r); err != nil {
+			logJsonError(err)
+		}
 		return
 	}
 
@@ -137,7 +144,8 @@ func (h *Handlers) addHandler(writer http.ResponseWriter, request *http.Request)
 	writer.WriteHeader(http.StatusCreated)
 	r := map[string]string{}
 	r["abv"] = abv
-	r["url"] = fmt.Sprintf("%s%s%s", request.Host, request.RequestURI, abv)
+	r["url_link"] = fmt.Sprintf("/%s", abv)
+	r["stats_link"] = fmt.Sprintf("%s/stats", abv)
 
 	if err := json.NewEncoder(writer).Encode(r); err != nil {
 		logJsonError(err)
@@ -163,7 +171,20 @@ func (h *Handlers) deleteHandler(writer http.ResponseWriter, request *http.Reque
 	}
 }
 
+func (h *Handlers) landingPageHandler(writer http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodGet {
+		http.Error(writer, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
+	}
+
+	tmpl := template.Must(template.ParseFiles("index.html"))
+	if err := tmpl.Execute(writer, nil); err != nil {
+		logErr(err)
+	}
+}
+
 func (h *Handlers) SetUp(router *mux.Router) {
+	router.HandleFunc("/", h.landingPageHandler).Methods(http.MethodGet)
 	router.HandleFunc(StatusPath, h.status.BackgroundHandler)
 	router.HandleFunc(MetricsPath, h.metricsHandler).Methods(http.MethodGet)
 	router.HandleFunc(StatsPath, h.statsHandler).Methods(http.MethodGet)
@@ -183,6 +204,10 @@ func (h *Handlers) metricsHandler(writer http.ResponseWriter, _ *http.Request) {
 	if err := json.NewEncoder(writer).Encode(m); err != nil {
 		logJsonError(err)
 	}
+}
+
+func logErr(err error) {
+	log.Printf("Couldn't send output: %v", err)
 }
 
 func logJsonError(err error) {
