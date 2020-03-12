@@ -40,6 +40,20 @@ type Metrics struct {
 	Uptime    string `json:"uptime"`
 }
 
+type urlReturn struct {
+	Abv       string `json:"abv"`
+	UrlLink   string `json:"url_link"`
+	StatsLink string `json:"stats_link"`
+}
+
+func createReturn(abv string) urlReturn {
+	return urlReturn{
+		Abv:       abv,
+		UrlLink:   fmt.Sprintf("/%s", abv),
+		StatsLink: fmt.Sprintf("/%s/stats", abv),
+	}
+}
+
 func CreateHandlers(d dao.ShortUrlDao, s status.SimpleStatus) Handlers {
 	return Handlers{dao: d, metrics: Metrics{}, startTime: time.Now(), status: s}
 }
@@ -118,11 +132,7 @@ func (h *Handlers) addHandler(writer http.ResponseWriter, request *http.Request)
 	abv, _ := h.dao.GetAbv(u)
 	if len(abv) > 0 {
 		writer.WriteHeader(http.StatusOK)
-		r := map[string]string{}
-		r["abv"] = abv
-		r["url_link"] = fmt.Sprintf("/%s", abv)
-		r["stats_link"] = fmt.Sprintf("%s/stats", abv)
-		if err := json.NewEncoder(writer).Encode(r); err != nil {
+		if err := json.NewEncoder(writer).Encode(createReturn(abv)); err != nil {
 			logJsonError(err)
 		}
 		return
@@ -142,12 +152,7 @@ func (h *Handlers) addHandler(writer http.ResponseWriter, request *http.Request)
 	}
 
 	writer.WriteHeader(http.StatusCreated)
-	r := map[string]string{}
-	r["abv"] = abv
-	r["url_link"] = fmt.Sprintf("/%s", abv)
-	r["stats_link"] = fmt.Sprintf("%s/stats", abv)
-
-	if err := json.NewEncoder(writer).Encode(r); err != nil {
+	if err := json.NewEncoder(writer).Encode(createReturn(abv)); err != nil {
 		logJsonError(err)
 	}
 }
