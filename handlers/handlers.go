@@ -118,7 +118,13 @@ func (h *Handlers) addHandler(writer http.ResponseWriter, request *http.Request)
 	abv, _ := h.dao.GetAbv(u)
 	if len(abv) > 0 {
 		writer.WriteHeader(http.StatusOK)
-		_, _ = fmt.Fprintf(writer, "%s%s%s", request.Host, request.RequestURI, abv)
+		r := map[string]string{}
+		r["abv"] = abv
+		r["url_link"] = fmt.Sprintf("/%s", abv)
+		r["stats_link"] = fmt.Sprintf("%s/stats", abv)
+		if err := json.NewEncoder(writer).Encode(r); err != nil {
+			logJsonError(err)
+		}
 		return
 	}
 
@@ -138,7 +144,8 @@ func (h *Handlers) addHandler(writer http.ResponseWriter, request *http.Request)
 	writer.WriteHeader(http.StatusCreated)
 	r := map[string]string{}
 	r["abv"] = abv
-	r["url"] = fmt.Sprintf("%s%s%s", request.Host, request.RequestURI, abv)
+	r["url_link"] = fmt.Sprintf("/%s", abv)
+	r["stats_link"] = fmt.Sprintf("%s/stats", abv)
 
 	if err := json.NewEncoder(writer).Encode(r); err != nil {
 		logJsonError(err)
