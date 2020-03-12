@@ -20,8 +20,8 @@ const contentType string = "Content-Type"
 const appJson string = "application/json"
 const AppPath string = "/{abv}"
 const StatsPath string = "/{abv}/stats"
-const MetricsPath string = "/metrics"
-const StatusPath string = "/status"
+const MetricsPath string = "/diag/metrics"
+const StatusPath string = "/diag/status"
 
 type Handlers struct {
 	dao       dao.ShortUrlDao
@@ -224,7 +224,7 @@ func logWrapper(next http.Handler) http.Handler {
 }
 
 func (h *Handlers) hitsCounterWrapper(next http.Handler) http.Handler {
-	// using this mechanism since the handler is in a different package
+	// using this mechanism since the status handler is in a different package
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.RequestURI == StatusPath {
 			atomic.AddUint64(&h.metrics.Status, 1)

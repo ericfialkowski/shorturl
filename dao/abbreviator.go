@@ -13,7 +13,7 @@ func randString() string {
 	tries := 0
 	for {
 		s := rando.RandStrn(keySize)
-		if !BadWord(s) {
+		if AcceptableWord(s) {
 			return s
 		}
 		// if we haven't found a good word in a certain number of tries, we need to grow the keysize for more randomness

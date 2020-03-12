@@ -5,7 +5,10 @@ import (
 	"strings"
 )
 
-var wordMap = map[string]bool{
+// this will be for words we don't want to allow (like if there are path fragments we want to use)
+var reservedWords = map[string]bool{}
+
+var badWords = map[string]bool{
 	"2g1c":           true,
 	"4r5e":           true,
 	"5h1t":           true,
@@ -685,17 +688,21 @@ var wordMap = map[string]bool{
 	"zubb":           true,
 }
 
-func BadWord(s string) bool {
-	if wordMap[s] {
-		return true
+func AcceptableWord(s string) bool {
+	if reservedWords[s] {
+		return false
 	}
 
-	for key := range wordMap {
+	if badWords[s] {
+		return false
+	}
+	// need to make sure a bad word fragment doesn't slip through, either
+	for key := range badWords {
 		if strings.Contains(s, key) {
 			log.Printf("New bad word found: %s", s) // eventually add new words found to the compile time map
-			return true
+			return false
 		}
 	}
 
-	return false
+	return true
 }
