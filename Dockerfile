@@ -7,7 +7,7 @@ RUN go build -v
 
 # Stage 2 Final
 FROM debian:stretch-slim as final
-COPY --from=build /go/src/app/index.html /index.html
+COPY --from=build /go/src/app/*.html /
 COPY --from=build /go/src/app/shorturl /shorturl
 
 EXPOSE 8800

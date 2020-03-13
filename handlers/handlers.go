@@ -20,6 +20,7 @@ const contentType string = "Content-Type"
 const appJson string = "application/json"
 const appPath string = "/{abv}"
 const statsPath string = "/{abv}/stats"
+const statsUiPath string = "/{abv}/stats/ui"
 const metricsPath string = "/diag/metrics"
 const statusPath string = "/diag/status"
 
@@ -41,16 +42,18 @@ type metrics struct {
 }
 
 type urlReturn struct {
-	Abv       string `json:"abv"`
-	UrlLink   string `json:"url_link"`
-	StatsLink string `json:"stats_link"`
+	Abv         string `json:"abv"`
+	UrlLink     string `json:"url_link"`
+	StatsLink   string `json:"stats_link"`
+	StatsUiLink string `json:"stats_ui_link"`
 }
 
 func createReturn(abv string) urlReturn {
 	return urlReturn{
-		Abv:       abv,
-		UrlLink:   fmt.Sprintf("/%s", abv),
-		StatsLink: fmt.Sprintf("/%s/stats", abv),
+		Abv:         abv,
+		UrlLink:     fmt.Sprintf("/%s", abv),
+		StatsLink:   fmt.Sprintf("/%s/stats", abv),
+		StatsUiLink: fmt.Sprintf("/%s/stats/ui", abv),
 	}
 }
 
@@ -70,7 +73,7 @@ func (h *Handlers) getHandler(writer http.ResponseWriter, request *http.Request)
 		return
 	}
 
-	if len(u) == 0 {
+	if u == "" {
 		writer.WriteHeader(http.StatusNotFound)
 		_, _ = fmt.Fprint(writer, "No link found")
 		return
@@ -115,7 +118,7 @@ func (h *Handlers) addHandler(writer http.ResponseWriter, request *http.Request)
 		return
 	}
 
-	if len(u) == 0 {
+	if u == "" {
 		writer.WriteHeader(http.StatusInternalServerError)
 		_, _ = fmt.Fprint(writer, "Empty Url Passed In")
 		return
@@ -130,7 +133,7 @@ func (h *Handlers) addHandler(writer http.ResponseWriter, request *http.Request)
 	}
 
 	abv, _ := h.dao.GetAbv(u)
-	if len(abv) > 0 {
+	if abv != "" {
 		writer.WriteHeader(http.StatusOK)
 		if err := json.NewEncoder(writer).Encode(createReturn(abv)); err != nil {
 			logJsonError(err)
@@ -176,14 +179,32 @@ func (h *Handlers) deleteHandler(writer http.ResponseWriter, request *http.Reque
 	}
 }
 
-func (h *Handlers) landingPageHandler(writer http.ResponseWriter, request *http.Request) {
-	if request.Method != http.MethodGet {
-		http.Error(writer, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+func (h *Handlers) landingPageHandler(writer http.ResponseWriter, _ *http.Request) {
+	tmpl := template.Must(template.ParseFiles("index.html"))
+	if err := tmpl.Execute(writer, nil); err != nil {
+		logErr(err)
+	}
+}
+
+func (h *Handlers) statsUiHandler(writer http.ResponseWriter, request *http.Request) {
+	vars := mux.Vars(request)
+	abv := vars["abv"]
+	stats, err := h.dao.GetStats(abv)
+
+	if err != nil {
+		writer.WriteHeader(http.StatusInternalServerError)
+		_, _ = fmt.Fprintf(writer, "Error getting stats: %v", err)
 		return
 	}
 
-	tmpl := template.Must(template.ParseFiles("index.html"))
-	if err := tmpl.Execute(writer, nil); err != nil {
+	if stats.Abbreviation == "" {
+		writer.WriteHeader(http.StatusNotFound)
+		_, _ = fmt.Fprint(writer, "No link found")
+		return
+	}
+
+	tmpl := template.Must(template.ParseFiles("stats.html"))
+	if err := tmpl.Execute(writer, stats); err != nil {
 		logErr(err)
 	}
 }
@@ -193,6 +214,7 @@ func (h *Handlers) SetUp(router *mux.Router) {
 	router.HandleFunc(statusPath, h.status.BackgroundHandler)
 	router.HandleFunc(metricsPath, h.metricsHandler).Methods(http.MethodGet)
 	router.HandleFunc(statsPath, h.statsHandler).Methods(http.MethodGet)
+	router.HandleFunc(statsUiPath, h.statsUiHandler).Methods(http.MethodGet)
 	router.HandleFunc(appPath, h.deleteHandler).Methods(http.MethodDelete)
 	router.HandleFunc(appPath, h.getHandler).Methods(http.MethodGet)
 	router.HandleFunc("/", h.addHandler).Methods(http.MethodPost)
