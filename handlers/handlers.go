@@ -18,19 +18,19 @@ import (
 
 const contentType string = "Content-Type"
 const appJson string = "application/json"
-const AppPath string = "/{abv}"
-const StatsPath string = "/{abv}/stats"
-const MetricsPath string = "/diag/metrics"
-const StatusPath string = "/diag/status"
+const appPath string = "/{abv}"
+const statsPath string = "/{abv}/stats"
+const metricsPath string = "/diag/metrics"
+const statusPath string = "/diag/status"
 
 type Handlers struct {
 	dao       dao.ShortUrlDao
-	metrics   Metrics
+	metrics   metrics
 	startTime time.Time
 	status    status.SimpleStatus
 }
 
-type Metrics struct {
+type metrics struct {
 	Redirects uint64 `json:"redirect_counts"`
 	UrlStats  uint64 `json:"redirect_stats_counts"`
 	NewUrls   uint64 `json:"new_url_counts"`
@@ -55,7 +55,7 @@ func createReturn(abv string) urlReturn {
 }
 
 func CreateHandlers(d dao.ShortUrlDao, s status.SimpleStatus) Handlers {
-	return Handlers{dao: d, metrics: Metrics{}, startTime: time.Now(), status: s}
+	return Handlers{dao: d, metrics: metrics{}, startTime: time.Now(), status: s}
 }
 
 func (h *Handlers) getHandler(writer http.ResponseWriter, request *http.Request) {
@@ -190,11 +190,11 @@ func (h *Handlers) landingPageHandler(writer http.ResponseWriter, request *http.
 
 func (h *Handlers) SetUp(router *mux.Router) {
 	router.HandleFunc("/", h.landingPageHandler).Methods(http.MethodGet)
-	router.HandleFunc(StatusPath, h.status.BackgroundHandler)
-	router.HandleFunc(MetricsPath, h.metricsHandler).Methods(http.MethodGet)
-	router.HandleFunc(StatsPath, h.statsHandler).Methods(http.MethodGet)
-	router.HandleFunc(AppPath, h.deleteHandler).Methods(http.MethodDelete)
-	router.HandleFunc(AppPath, h.getHandler).Methods(http.MethodGet)
+	router.HandleFunc(statusPath, h.status.BackgroundHandler)
+	router.HandleFunc(metricsPath, h.metricsHandler).Methods(http.MethodGet)
+	router.HandleFunc(statsPath, h.statsHandler).Methods(http.MethodGet)
+	router.HandleFunc(appPath, h.deleteHandler).Methods(http.MethodDelete)
+	router.HandleFunc(appPath, h.getHandler).Methods(http.MethodGet)
 	router.HandleFunc("/", h.addHandler).Methods(http.MethodPost)
 	router.Use(logWrapper)
 	router.Use(h.hitsCounterWrapper)
@@ -231,7 +231,7 @@ func logWrapper(next http.Handler) http.Handler {
 func (h *Handlers) hitsCounterWrapper(next http.Handler) http.Handler {
 	// using this mechanism since the status handler is in a different package
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.RequestURI == StatusPath {
+		if request.RequestURI == statusPath {
 			atomic.AddUint64(&h.metrics.Status, 1)
 		}
 		next.ServeHTTP(writer, request)
