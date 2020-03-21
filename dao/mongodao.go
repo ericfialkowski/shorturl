@@ -18,7 +18,6 @@ import (
 /*
 Still TODO:
 	- retries for operations
-	- unique index for the urls
 */
 
 type MongoDB struct {
@@ -60,6 +59,15 @@ func CreateMongoDB(uri string) ShortUrlDao {
 			}, Options: options.Index().SetUnique(true).SetName("abv_uniqueness_ndx"),
 		}
 		collection := client.Database(dbName).Collection(collectionName)
+		if _, err = collection.Indexes().CreateOne(ctx, mod); err != nil {
+			log.Printf("Error creating index %v", err)
+		}
+
+		mod = mongo.IndexModel{
+			Keys: bson.M{
+				urlFieldName: 1, // index in ascending order
+			}, Options: options.Index().SetUnique(true).SetName("url_uniqueness_ndx"),
+		}
 		if _, err = collection.Indexes().CreateOne(ctx, mod); err != nil {
 			log.Printf("Error creating index %v", err)
 		}
