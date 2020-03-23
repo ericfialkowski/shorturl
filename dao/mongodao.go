@@ -24,13 +24,15 @@ type MongoDB struct {
 	client mongo.Client
 }
 
-const dbName = "shorturl"
-const collectionName = "urls"
-const urlFieldName = "url"
-const abvFieldName = "abv"
-const hitsFieldName = "hits"
-const lastAccessFieldName = "last_access"
-const dailyHitsFieldName = "daily_hits"
+const (
+	dbName              = "shorturl"
+	collectionName      = "urls"
+	urlFieldName        = "url"
+	abvFieldName        = "abv"
+	hitsFieldName       = "hits"
+	lastAccessFieldName = "last_access"
+	dailyHitsFieldName  = "daily_hits"
+)
 
 var once sync.Once
 

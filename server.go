@@ -16,9 +16,11 @@ import (
 	"github.com/gorilla/mux"
 )
 
-var port = environment.GetEnvIntOrDefault("port", 8800)
-var ip = environment.GetEnvStringOrDefault("ip", "")
-var mongoUri = environment.GetEnvStringOrDefault("mongo_uri", "") // mongodb://root:p%40ssw0rd!@localhost/admin
+var (
+	port     = environment.GetEnvIntOrDefault("port", 8800)
+	ip       = environment.GetEnvStringOrDefault("ip", "")
+	mongoUri = environment.GetEnvStringOrDefault("mongo_uri", "") // mongodb://root:p%40ssw0rd!@localhost/admin
+)
 
 func main() {
 	var db dao.ShortUrlDao

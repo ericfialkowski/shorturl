@@ -7,23 +7,25 @@ import (
 	"time"
 )
 
-type SimpleStatus struct {
-	Code      Code   `json:"status_code"`
-	Message   string `json:"status_msg"`
-	Timestamp string `json:"timestamp"`
-}
+type (
+	Code int
 
-type Code int
+	SimpleStatus struct {
+		Code      Code   `json:"status_code"`
+		Message   string `json:"status_msg"`
+		Timestamp string `json:"timestamp"`
+	}
+)
 
 const (
 	OK Code = iota
 	Warning
 	Critical
 	Unknown
-)
 
-const contentType string = "Content-Type"
-const appJson string = "application/json"
+	contentType string = "Content-Type"
+	appJson     string = "application/json"
+)
 
 func NewStatus() SimpleStatus {
 	s := SimpleStatus{}

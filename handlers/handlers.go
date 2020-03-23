@@ -16,37 +16,41 @@ import (
 	"github.com/gorilla/mux"
 )
 
-const contentType string = "Content-Type"
-const appJson string = "application/json"
-const appPath string = "/{abv}"
-const statsPath string = "/{abv}/stats"
-const statsUiPath string = "/{abv}/stats/ui"
-const metricsPath string = "/diag/metrics"
-const statusPath string = "/diag/status"
+const (
+	contentType string = "Content-Type"
+	appJson     string = "application/json"
+	appPath     string = "/{abv}"
+	statsPath   string = "/{abv}/stats"
+	statsUiPath string = "/{abv}/stats/ui"
+	metricsPath string = "/diag/metrics"
+	statusPath  string = "/diag/status"
+)
 
-type Handlers struct {
-	dao       dao.ShortUrlDao
-	metrics   metrics
-	startTime time.Time
-	status    status.SimpleStatus
-}
+type (
+	Handlers struct {
+		dao       dao.ShortUrlDao
+		metrics   metrics
+		startTime time.Time
+		status    status.SimpleStatus
+	}
 
-type metrics struct {
-	Redirects uint64 `json:"redirect_counts"`
-	UrlStats  uint64 `json:"redirect_stats_counts"`
-	NewUrls   uint64 `json:"new_url_counts"`
-	Deletes   uint64 `json:"delete_counts"`
-	Metrics   uint64 `json:"metric_request_counts"`
-	Status    uint64 `json:"stats_requests_counts"`
-	Uptime    string `json:"uptime"`
-}
+	metrics struct {
+		Redirects uint64 `json:"redirect_counts"`
+		UrlStats  uint64 `json:"redirect_stats_counts"`
+		NewUrls   uint64 `json:"new_url_counts"`
+		Deletes   uint64 `json:"delete_counts"`
+		Metrics   uint64 `json:"metric_request_counts"`
+		Status    uint64 `json:"stats_requests_counts"`
+		Uptime    string `json:"uptime"`
+	}
 
-type urlReturn struct {
-	Abv         string `json:"abv"`
-	UrlLink     string `json:"url_link"`
-	StatsLink   string `json:"stats_link"`
-	StatsUiLink string `json:"stats_ui_link"`
-}
+	urlReturn struct {
+		Abv         string `json:"abv"`
+		UrlLink     string `json:"url_link"`
+		StatsLink   string `json:"stats_link"`
+		StatsUiLink string `json:"stats_ui_link"`
+	}
+)
 
 func createReturn(abv string) urlReturn {
 	return urlReturn{
