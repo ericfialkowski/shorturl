@@ -20,12 +20,14 @@
             const posting = $.post("/", '"' + u + '"');
             posting.done( function ( data ) {
                 const r = $.parseJSON(data);
-                    let h = "<table>" +
+                    let h = "<hr><table>" +
                         "<tr><td>Abbreviation</td><td>" + r.abv + "</td></tr>" +
                         "<tr><td>Link</td><td><a target='_blank' href='" + r.url_link + "'>" + r.url_link + "</a></td></tr>" +
                         "<tr><td>Stats Link</td><td><a target='_blank' href='" + r.stats_ui_link +  "'>" + r.stats_link + "</a></td></tr>" +
+                        "<tr><td>Original Url</td><td><a target='_blank' href='" + u +  "'>" + u + "</a></td></tr>" +
                         "</table>";
                     $("#newUrlResults").append(h);
+                    $("#newUrl").val('');
                 });
             posting.fail( function ( data ) {
                 console.log(data);
