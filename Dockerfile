@@ -1,5 +1,5 @@
 # Stage 1 Build
-FROM golang:1.14 as build
+FROM golang:1.14.1 as build
 
 WORKDIR /go/src/app
 COPY . .

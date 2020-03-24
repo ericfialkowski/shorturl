@@ -1,12 +1,10 @@
-version: '3.1'
+version: '3.7'
 
 services:
 
   mongo:
     image: mongo
     container_name: shorturldb
-    ports:
-    - 27017:27017
     environment:
       MONGO_INITDB_ROOT_USERNAME: root
       MONGO_INITDB_ROOT_PASSWORD: p@ssw0rd!
@@ -19,3 +17,14 @@ services:
     environment:
       ME_CONFIG_MONGODB_ADMINUSERNAME: root
       ME_CONFIG_MONGODB_ADMINPASSWORD: p@ssw0rd!
+      ME_CONFIG_BASICAUTH_USERNAME: dbadmin
+      ME_CONFIG_BASICAUTH_PASSWORD: p@ssw0rd!
+
+  short-url:
+    image: short-url
+    container_name: shorturl
+    ports:
+      - 8800:8800
+    environment:
+      mongo_uri: mongodb://root:p%40ssw0rd!@mongo/admin
+      logrequests: "true"

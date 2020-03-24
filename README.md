@@ -9,3 +9,8 @@ This is my experiment in making a url shortener somewhat as described in the boo
  - Take a simple monolithic app and scale it further than it needs (for science!)
  - Have fun (probably the most important)
  
+ 
+ # Building
+ - run "docker build -t short-url ." in the root directory
+ - run "docker-compose up" in the "docker" sub directory 
+  
