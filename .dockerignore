@@ -9,3 +9,4 @@ Dockerfile
 .gitignore
 .idea
 README.md
+k8s
