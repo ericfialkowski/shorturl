@@ -701,7 +701,7 @@ func AcceptableWord(s string) bool {
 	// need to make sure a bad word fragment doesn't slip through, either
 	for key := range badWords {
 		if strings.Contains(s, key) {
-			log.Printf("New bad word found: %s", s) // eventually add new words found to the compile time map
+			log.Printf("New bad word found: %s", s) // eventually add new words found to the compile-time map
 			return false
 		}
 	}

@@ -91,8 +91,8 @@ func main() {
 	// until the timeout deadline.
 	_ = srv.Shutdown(ctx)
 	// Optionally, you could run srv.Shutdown in a goroutine and block on
-	// <-ctx.Done() if your application should wait for other services
-	// to finalize based on context cancellation.
+	// <-ctx.Done() if your application should wait for other services to finalize
+	// based on context cancellation.
 	log.Println("shutting down")
 	os.Exit(0)
 }

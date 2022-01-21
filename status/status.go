@@ -77,8 +77,8 @@ func (s *SimpleStatus) Handler(writer http.ResponseWriter, _ *http.Request) {
 }
 
 /*
-BackgroundHandler is used when there will be a background process that updates the status and we want to see the timestamp
-of when the background task ran last
+BackgroundHandler is used when there will be a background process that updates the status,
+and we want to see the timestamp of when the background task ran last
 */
 func (s *SimpleStatus) BackgroundHandler(writer http.ResponseWriter, _ *http.Request) {
 	writer.Header().Add(contentType, appJson)
