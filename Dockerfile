@@ -1,12 +1,12 @@
 # Stage 1 Build
-FROM golang:1.17-alpine3.15 as  build
+FROM golang:1.19-alpine3.17 as  build
 
 WORKDIR /go/src/app
 COPY . .
 RUN go build -v
 
 # Stage 2 Final
-FROM alpine:3.15 as final
+FROM alpine:3.17 as final
 COPY --from=build /go/src/app/*.html /
 COPY --from=build /go/src/app/shorturl /shorturl
 

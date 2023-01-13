@@ -27,10 +27,8 @@ const (
 	appJson     string = "application/json"
 )
 
-func NewStatus() SimpleStatus {
-	s := SimpleStatus{}
-	s.Unknown("initializing")
-	return s
+func NewStatus() *SimpleStatus {
+	return &SimpleStatus{Code: Unknown, Message: "initializing", Timestamp: currentTimestamp()}
 }
 
 func (s *SimpleStatus) newStatus(code Code, message string) {

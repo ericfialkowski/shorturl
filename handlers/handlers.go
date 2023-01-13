@@ -31,7 +31,7 @@ type (
 		dao       dao.ShortUrlDao
 		metrics   metrics
 		startTime time.Time
-		status    status.SimpleStatus
+		status    *status.SimpleStatus
 	}
 
 	metrics struct {
@@ -61,7 +61,7 @@ func createReturn(abv string) urlReturn {
 	}
 }
 
-func CreateHandlers(d dao.ShortUrlDao, s status.SimpleStatus) Handlers {
+func CreateHandlers(d dao.ShortUrlDao, s *status.SimpleStatus) Handlers {
 	return Handlers{dao: d, metrics: metrics{}, startTime: time.Now(), status: s}
 }
 
