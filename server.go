@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/labstack/echo/v4"
 	"log"
 	"net/http"
 	"os"
@@ -12,8 +13,6 @@ import (
 	"shorturl/handlers"
 	"shorturl/status"
 	"time"
-
-	"github.com/gorilla/mux"
 )
 
 var (
@@ -33,7 +32,8 @@ func main() {
 	defer db.Cleanup()
 
 	// set up http router
-	r := mux.NewRouter()
+	e := echo.New()
+	//e.HideBanner = true
 
 	// add status handler
 	s := status.NewStatus()
@@ -52,7 +52,7 @@ func main() {
 	// add other handlers
 	//
 	h := handlers.CreateHandlers(db, s)
-	h.SetUp(r)
+	h.SetUp(e)
 
 	bindAddr := fmt.Sprintf("%s:%d", ip, port)
 	log.Printf("Listening to %s", bindAddr)
@@ -63,7 +63,7 @@ func main() {
 		WriteTimeout: environment.GetEnvDurationOrDefault("http_write_timeout", time.Second*10),
 		ReadTimeout:  environment.GetEnvDurationOrDefault("http_read_timeout", time.Second*15),
 		IdleTimeout:  environment.GetEnvDurationOrDefault("http_idle_timeout", time.Second*60),
-		Handler:      r, // Pass our instance of gorilla/mux in.
+		Handler:      e,
 	}
 
 	// Run our server in a goroutine so that it doesn't block.
