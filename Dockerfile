@@ -1,5 +1,5 @@
 # Stage 1 Build
-FROM golang:1.19-alpine3.17 as  build
+FROM golang:1.20-alpine3.17 as  build
 
 WORKDIR /go/src/app
 COPY . .
