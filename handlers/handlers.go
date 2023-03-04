@@ -3,8 +3,9 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 	"html/template"
-	"log"
 	"net/http"
 	"net/url"
 	"shorturl/dao"
@@ -12,16 +13,12 @@ import (
 	"shorturl/status"
 	"sync/atomic"
 	"time"
-
-	"github.com/gorilla/mux"
 )
 
 const (
-	contentType string = "Content-Type"
-	appJson     string = "application/json"
-	appPath     string = "/{abv}"
-	statsPath   string = "/{abv}/stats"
-	statsUiPath string = "/{abv}/stats/ui"
+	appPath     string = "/:abv"
+	statsPath   string = "/:abv/stats"
+	statsUiPath string = "/:abv/stats/ui"
 	metricsPath string = "/diag/metrics"
 	statusPath  string = "/diag/status"
 )
@@ -65,201 +62,146 @@ func CreateHandlers(d dao.ShortUrlDao, s *status.SimpleStatus) Handlers {
 	return Handlers{dao: d, metrics: metrics{}, startTime: time.Now(), status: s}
 }
 
-func (h *Handlers) getHandler(writer http.ResponseWriter, request *http.Request) {
+func (h *Handlers) getHandler(c echo.Context) error {
 	atomic.AddUint64(&h.metrics.Redirects, 1)
-	vars := mux.Vars(request)
-	abv := vars["abv"]
+	abv := c.Param("abv")
 	u, err := h.dao.GetUrl(abv)
 
 	if err != nil {
-		writer.WriteHeader(http.StatusInternalServerError)
-		_, _ = fmt.Fprintf(writer, "Error getting redirect: %v", err)
-		return
+		return c.String(http.StatusInternalServerError, fmt.Sprintf("Error getting redirect: %v", err))
 	}
 
 	if u == "" {
-		writer.WriteHeader(http.StatusNotFound)
-		_, _ = fmt.Fprint(writer, "No link found")
-		return
+		return c.String(http.StatusNotFound, "No link found")
 	}
 
-	http.Redirect(writer, request, u, http.StatusFound)
+	http.Redirect(c.Response().Writer, c.Request(), u, http.StatusFound)
+	return nil
 }
 
-func (h *Handlers) statsHandler(writer http.ResponseWriter, request *http.Request) {
+func (h *Handlers) statsHandler(c echo.Context) error {
 	atomic.AddUint64(&h.metrics.UrlStats, 1)
-	vars := mux.Vars(request)
-	abv := vars["abv"]
+	abv := c.Param("abv")
 	stats, err := h.dao.GetStats(abv)
 
 	if err != nil {
-		writer.WriteHeader(http.StatusInternalServerError)
-		_, _ = fmt.Fprintf(writer, "Error getting stats: %v", err)
-		return
+		return c.String(http.StatusInternalServerError, fmt.Sprintf("Error getting stats: %v", err))
 	}
 
 	if stats.Abbreviation == "" {
-		writer.WriteHeader(http.StatusNotFound)
-		_, _ = fmt.Fprint(writer, "No link found")
-		return
+		return c.String(http.StatusNotFound, "No link found")
 	}
 
-	writer.WriteHeader(http.StatusOK)
-	writer.Header().Add(contentType, appJson)
-
-	if err := json.NewEncoder(writer).Encode(stats); err != nil {
-		logJsonError(err)
-	}
+	return c.JSON(http.StatusOK, stats)
 }
 
-func (h *Handlers) addHandler(writer http.ResponseWriter, request *http.Request) {
+func (h *Handlers) addHandler(c echo.Context) error {
 	atomic.AddUint64(&h.metrics.NewUrls, 1)
 	var u string
 
-	if err := json.NewDecoder(request.Body).Decode(&u); err != nil {
-		writer.WriteHeader(http.StatusInternalServerError)
-		_, _ = fmt.Fprintf(writer, "Error parsing url: %v", err)
-		return
+	if err := json.NewDecoder(c.Request().Body).Decode(&u); err != nil {
+		return c.String(http.StatusInternalServerError, fmt.Sprintf("Error parsing url: %v", err))
 	}
 
 	if u == "" {
-		writer.WriteHeader(http.StatusInternalServerError)
-		_, _ = fmt.Fprint(writer, "Empty Url Passed In")
-		return
+		return c.String(http.StatusBadRequest, "Empty url passed in")
 	}
 
 	if parsedUrl, err := url.ParseRequestURI(u); err != nil ||
 		parsedUrl.Scheme == "" ||
 		parsedUrl.Host == "" {
-		writer.WriteHeader(http.StatusInternalServerError)
-		_, _ = fmt.Fprint(writer, "Invalid Url Passed In")
-		return
+		return c.String(http.StatusBadRequest, "Invalid url passed in")
 	}
 
 	abv, _ := h.dao.GetAbv(u)
 	if abv != "" {
-		writer.WriteHeader(http.StatusOK)
-		if err := json.NewEncoder(writer).Encode(createReturn(abv)); err != nil {
-			logJsonError(err)
-		}
-		return
+		r := createReturn(abv)
+		return c.JSON(http.StatusOK, r)
 	}
 
 	abv, err := dao.CreateAbbreviation(u, h.dao)
 	if err != nil {
-		writer.WriteHeader(http.StatusInternalServerError)
-		_, _ = fmt.Fprintf(writer, "Error creating abbreviation: %v", err)
-		return
+		return c.String(http.StatusInternalServerError, fmt.Sprintf("Error creating abbreviation: %v", err))
 	}
 
 	if err := h.dao.Save(abv, u); err != nil {
-		writer.WriteHeader(http.StatusInternalServerError)
-		_, _ = fmt.Fprintf(writer, "Error saving url: %v", err)
-		return
+		return c.String(http.StatusInternalServerError, fmt.Sprintf("Error saving url: %v", err))
 	}
 
-	writer.WriteHeader(http.StatusCreated)
-	if err := json.NewEncoder(writer).Encode(createReturn(abv)); err != nil {
-		logJsonError(err)
-	}
+	r := createReturn(abv)
+	return c.JSON(http.StatusOK, r)
 }
 
-func (h *Handlers) deleteHandler(writer http.ResponseWriter, request *http.Request) {
+func (h *Handlers) deleteHandler(c echo.Context) error {
 	atomic.AddUint64(&h.metrics.Deletes, 1)
-	vars := mux.Vars(request)
-	abv := vars["abv"]
+	abv := c.Param("abv")
 	err := h.dao.DeleteAbv(abv)
 
 	if err != nil {
-		writer.WriteHeader(http.StatusInternalServerError)
-		_, _ = fmt.Fprintf(writer, "Error deleting: %v", err)
-		return
+		return c.String(http.StatusInternalServerError, fmt.Sprintf("Error deleting: %v", err))
 	}
 
-	writer.Header().Add(contentType, appJson)
-	writer.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(writer).Encode("deleted"); err != nil {
-		logJsonError(err)
-	}
+	return c.JSON(http.StatusOK, "deleted")
 }
 
-func (h *Handlers) landingPageHandler(writer http.ResponseWriter, _ *http.Request) {
+func (h *Handlers) landingPageHandler(c echo.Context) error {
+	//
+	// TODO: is this idiomatic echo?
+	//
 	tmpl := template.Must(template.ParseFiles("index.html"))
-	if err := tmpl.Execute(writer, nil); err != nil {
-		logErr(err)
-	}
+	return tmpl.Execute(c.Response().Writer, nil)
 }
 
-func (h *Handlers) statsUiHandler(writer http.ResponseWriter, request *http.Request) {
-	vars := mux.Vars(request)
-	abv := vars["abv"]
+func (h *Handlers) statsUiHandler(c echo.Context) error {
+	abv := c.Param("abv")
 	stats, err := h.dao.GetStats(abv)
 
 	if err != nil {
-		writer.WriteHeader(http.StatusInternalServerError)
-		_, _ = fmt.Fprintf(writer, "Error getting stats: %v", err)
-		return
+		return c.String(http.StatusInternalServerError, fmt.Sprintf("Error getting stats: %v", err))
 	}
 
 	if stats.Abbreviation == "" {
-		writer.WriteHeader(http.StatusNotFound)
-		_, _ = fmt.Fprint(writer, "No link found")
-		return
+		return c.String(http.StatusNotFound, "No link found")
 	}
 
 	tmpl := template.Must(template.ParseFiles("stats.html"))
-	if err := tmpl.Execute(writer, stats); err != nil {
-		logErr(err)
-	}
+	return tmpl.Execute(c.Response().Writer, stats)
 }
 
-func (h *Handlers) SetUp(router *mux.Router) {
-	router.HandleFunc("/", h.landingPageHandler).Methods(http.MethodGet)
-	router.HandleFunc(statusPath, h.status.BackgroundHandler)
-	router.HandleFunc(metricsPath, h.metricsHandler).Methods(http.MethodGet)
-	router.HandleFunc(statsPath, h.statsHandler).Methods(http.MethodGet)
-	router.HandleFunc(statsUiPath, h.statsUiHandler).Methods(http.MethodGet)
-	router.HandleFunc(appPath, h.deleteHandler).Methods(http.MethodDelete)
-	router.HandleFunc(appPath, h.getHandler).Methods(http.MethodGet)
-	router.HandleFunc("/", h.addHandler).Methods(http.MethodPost)
-	router.Use(logWrapper)
-	router.Use(h.hitsCounterWrapper)
+func (h *Handlers) SetUp(e *echo.Echo) {
+	e.GET("/", h.landingPageHandler)
+	e.GET(statusPath, h.status.BackgroundHandler)
+	e.GET(metricsPath, h.metricsHandler)
+	e.GET(statsPath, h.statsHandler)
+	e.GET(statsUiPath, h.statsUiHandler)
+	e.DELETE(appPath, h.deleteHandler)
+	e.GET(appPath, h.getHandler)
+	e.POST("/", h.addHandler)
+
+	e.Use(h.statusHitsCounter())
+	e.Use(middleware.LoggerWithConfig(middleware.LoggerConfig{
+		Skipper: func(c echo.Context) bool {
+			return !environment.GetEnvBoolOrDefault("logrequests", true)
+		},
+		Format: "method=${method}, uri=${uri}, status=${status}\n",
+	}))
 }
 
-func (h *Handlers) metricsHandler(writer http.ResponseWriter, _ *http.Request) {
+func (h *Handlers) metricsHandler(c echo.Context) error {
 	atomic.AddUint64(&h.metrics.Metrics, 1)
-	writer.Header().Add(contentType, appJson)
-	writer.WriteHeader(http.StatusOK)
 	m := h.metrics
 	m.Uptime = time.Since(h.startTime).String()
-	if err := json.NewEncoder(writer).Encode(m); err != nil {
-		logJsonError(err)
-	}
+	return c.JSON(http.StatusOK, m)
 }
 
-func logErr(err error) {
-	log.Printf("Couldn't send output: %v", err)
-}
-
-func logJsonError(err error) {
-	log.Printf("Couldn't encode/write json: %v", err)
-}
-
-func logWrapper(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if environment.GetEnvBoolOrDefault("logrequests", false) {
-			log.Printf("access:  %s - %s\n", request.Method, request.RequestURI)
-		}
-		next.ServeHTTP(writer, request)
-	})
-}
-
-func (h *Handlers) hitsCounterWrapper(next http.Handler) http.Handler {
+func (h *Handlers) statusHitsCounter() echo.MiddlewareFunc {
 	// using this mechanism since the status handler is in a different package
-	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.RequestURI == statusPath {
-			atomic.AddUint64(&h.metrics.Status, 1)
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			if c.Path() == statusPath {
+				atomic.AddUint64(&h.metrics.Status, 1)
+			}
+			return next(c)
 		}
-		next.ServeHTTP(writer, request)
-	})
+	}
 }
