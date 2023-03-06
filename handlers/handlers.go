@@ -144,14 +144,6 @@ func (h *Handlers) deleteHandler(c echo.Context) error {
 	return c.JSON(http.StatusOK, "deleted")
 }
 
-func (h *Handlers) landingPageHandler(c echo.Context) error {
-	//
-	// TODO: is this idiomatic echo?
-	//
-	tmpl := template.Must(template.ParseFiles("index.html"))
-	return tmpl.Execute(c.Response().Writer, nil)
-}
-
 func (h *Handlers) statsUiHandler(c echo.Context) error {
 	abv := c.Param("abv")
 	stats, err := h.dao.GetStats(abv)
@@ -169,7 +161,7 @@ func (h *Handlers) statsUiHandler(c echo.Context) error {
 }
 
 func (h *Handlers) SetUp(e *echo.Echo) {
-	e.GET("/", h.landingPageHandler)
+	e.File("/", "index.html")
 	e.GET(statusPath, h.status.BackgroundHandler)
 	e.GET(metricsPath, h.metricsHandler)
 	e.GET(statsPath, h.statsHandler)
