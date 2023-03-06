@@ -14,6 +14,12 @@
 <p id="newUrlResults"></p>
 <hr>
 <script>
+    $('#newUrl').on("keypress", function(e) {
+        if (e.keyCode == 13) {
+            $("#newUrlBtn").click()
+            return false; // prevent the button click from happening
+        }
+    });
     $("#newUrlBtn").click(function () {
             $("#newUrlResults").empty();
             const u = $("#newUrl").val();
