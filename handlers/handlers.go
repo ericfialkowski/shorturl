@@ -162,6 +162,7 @@ func (h *Handlers) statsUiHandler(c echo.Context) error {
 
 func (h *Handlers) SetUp(e *echo.Echo) {
 	e.File("/", "index.html")
+	e.File("/favicon.ico", "favicon.ico")
 	e.GET(statusPath, h.status.BackgroundHandler)
 	e.GET(metricsPath, h.metricsHandler)
 	e.GET(statsPath, h.statsHandler)
