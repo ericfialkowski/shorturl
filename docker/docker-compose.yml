@@ -16,7 +16,7 @@ services:
     image: mongo-express
     container_name: shorturldb-express
     restart: always
-    depends_on: mongo
+    depends_on: [mongo]
     ports:
       - "8081:8081"
     environment:
@@ -27,7 +27,7 @@ services:
   short-url:
     image: short-url
     container_name: shorturl
-    depends_on: mongo
+    depends_on: [mongo]
     ports:
       - "8800:8800"
     environment:
