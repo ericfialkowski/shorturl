@@ -36,9 +36,8 @@ const (
 
 var once sync.Once
 
-func ctx() context.Context {
-	ctx, _ := context.WithTimeout(context.Background(), environment.GetEnvDurationOrDefault("mongo_timeout", 10*time.Second))
-	return ctx
+func newContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), environment.GetEnvDurationOrDefault("mongo_timeout", 10*time.Second))
 }
 
 func CreateMongoDB(uri string) ShortUrlDao {
@@ -49,7 +48,8 @@ func CreateMongoDB(uri string) ShortUrlDao {
 	if err != nil {
 		log.Fatalf("Couldn't create client: %v", err)
 	}
-	ctx := ctx()
+	ctx, cancel := newContext()
+	defer cancel()
 	if err = client.Connect(ctx); err != nil {
 		log.Fatalf("Couldn't connect: %v", err)
 	}
@@ -79,12 +79,14 @@ func CreateMongoDB(uri string) ShortUrlDao {
 }
 
 func (d *MongoDB) Cleanup() {
-	ctx := ctx()
+	ctx, cancel := newContext()
+	defer cancel()
 	_ = d.client.Disconnect(ctx)
 }
 
 func (d *MongoDB) IsLikelyOk() bool {
-	ctx := ctx()
+	ctx, cancel := newContext()
+	defer cancel()
 	if err := d.client.Ping(ctx, readpref.Primary()); err != nil {
 		log.Printf("Ping failed: %v", err)
 		return false
@@ -93,7 +95,8 @@ func (d *MongoDB) IsLikelyOk() bool {
 }
 
 func (d *MongoDB) Save(abv string, url string) error {
-	ctx := ctx()
+	ctx, cancel := newContext()
+	defer cancel()
 	collection := d.client.Database(dbName).Collection(collectionName)
 	data := ShortUrl{Abbreviation: abv, Url: url, Hits: 0}
 	if _, err := collection.InsertOne(ctx, data); err != nil {
@@ -105,7 +108,8 @@ func (d *MongoDB) Save(abv string, url string) error {
 }
 
 func (d *MongoDB) DeleteAbv(abv string) error {
-	ctx := ctx()
+	ctx, cancel := newContext()
+	defer cancel()
 	collection := d.client.Database(dbName).Collection(collectionName)
 	m := bson.M{abvFieldName: abv}
 	if _, err := collection.DeleteOne(ctx, m); err != nil {
@@ -116,7 +120,8 @@ func (d *MongoDB) DeleteAbv(abv string) error {
 }
 
 func (d *MongoDB) DeleteUrl(url string) error {
-	ctx := ctx()
+	ctx, cancel := newContext()
+	defer cancel()
 	collection := d.client.Database(dbName).Collection(collectionName)
 	m := bson.M{urlFieldName: url}
 	if _, err := collection.DeleteOne(ctx, m); err != nil {
@@ -127,13 +132,13 @@ func (d *MongoDB) DeleteUrl(url string) error {
 }
 
 func (d *MongoDB) GetUrl(abv string) (string, error) {
-	ctx := ctx()
+	ctx, cancel := newContext()
+	defer cancel()
 	collection := d.client.Database(dbName).Collection(collectionName)
 	abvKey := bson.M{abvFieldName: abv}
 	result := collection.FindOne(ctx, abvKey)
 
 	if result.Err() != nil {
-		//return false, fmt.Errorf("error looking up %s: %v", Abbreviation, result.Err())
 		return "", nil
 	}
 
@@ -143,6 +148,8 @@ func (d *MongoDB) GetUrl(abv string) (string, error) {
 	}
 
 	go func() {
+		ctx, cancel := newContext()
+		defer cancel()
 		update := bson.D{{"$inc", bson.D{{hitsFieldName, 1}}},
 			{"$currentDate", bson.D{{lastAccessFieldName, true}}},
 			{"$inc", bson.D{{dailyHitsFieldName + "." + Date(), 1}}},
@@ -155,13 +162,14 @@ func (d *MongoDB) GetUrl(abv string) (string, error) {
 }
 
 func (d *MongoDB) GetStats(abv string) (ShortUrl, error) {
-	ctx := ctx()
+	ctx, cancel := newContext()
+	defer cancel()
 	collection := d.client.Database(dbName).Collection(collectionName)
 	m := bson.M{abvFieldName: abv}
 	result := collection.FindOne(ctx, m)
 
 	if result.Err() != nil {
-		//return false, fmt.Errorf("error looking up %s: %v", Abbreviation, result.Err())
+		log.Printf("error getting stats %v", result.Err())
 		return ShortUrl{}, nil
 	}
 
@@ -174,13 +182,14 @@ func (d *MongoDB) GetStats(abv string) (ShortUrl, error) {
 }
 
 func (d *MongoDB) GetAbv(url string) (string, error) {
-	ctx := ctx()
+	ctx, cancel := newContext()
+	defer cancel()
 	collection := d.client.Database(dbName).Collection(collectionName)
 	m := bson.M{urlFieldName: url}
 	result := collection.FindOne(ctx, m)
 
 	if result.Err() != nil {
-		//return false, fmt.Errorf("error looking up %s: %v", Url, result.Err())
+		log.Printf("error getting abreviation %v", result.Err())
 		return "", nil
 	}
 
