@@ -29,6 +29,7 @@ type (
 		metrics   metrics
 		startTime time.Time
 		status    *status.SimpleStatus
+		id        string
 	}
 
 	metrics struct {
@@ -58,8 +59,8 @@ func createReturn(abv string) urlReturn {
 	}
 }
 
-func CreateHandlers(d dao.ShortUrlDao, s *status.SimpleStatus) Handlers {
-	return Handlers{dao: d, metrics: metrics{}, startTime: time.Now(), status: s}
+func CreateHandlers(d dao.ShortUrlDao, s *status.SimpleStatus, id string) Handlers {
+	return Handlers{dao: d, metrics: metrics{}, startTime: time.Now(), status: s, id: id}
 }
 
 func (h *Handlers) getHandler(c echo.Context) error {
@@ -178,6 +179,7 @@ func (h *Handlers) SetUp(e *echo.Echo) {
 		},
 		Format: "method=${method}, uri=${uri}, status=${status}\n",
 	}))
+	e.Use(h.idHeader())
 }
 
 func (h *Handlers) metricsHandler(c echo.Context) error {
@@ -194,6 +196,15 @@ func (h *Handlers) statusHitsCounter() echo.MiddlewareFunc {
 			if c.Path() == statusPath {
 				atomic.AddUint64(&h.metrics.Status, 1)
 			}
+			return next(c)
+		}
+	}
+}
+
+func (h *Handlers) idHeader() echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			c.Response().Header().Add("X-SERVER-ID", h.id)
 			return next(c)
 		}
 	}

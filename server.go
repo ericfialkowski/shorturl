@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"log"
 	"net/http"
@@ -22,6 +23,11 @@ var (
 )
 
 func main() {
+	id := "unknown"
+	if uuid, err := uuid.NewUUID(); err == nil {
+		id = uuid.String()
+	}
+
 	var db dao.ShortUrlDao
 	if len(mongoUri) == 0 {
 		db = dao.CreateMemoryDB()
@@ -33,7 +39,6 @@ func main() {
 
 	// set up http router
 	e := echo.New()
-	//e.HideBanner = true
 
 	// add status handler
 	s := status.NewStatus()
@@ -51,11 +56,11 @@ func main() {
 	//
 	// add other handlers
 	//
-	h := handlers.CreateHandlers(db, s)
+	h := handlers.CreateHandlers(db, s, id)
 	h.SetUp(e)
 
 	bindAddr := fmt.Sprintf("%s:%d", ip, port)
-	log.Printf("Listening to %s", bindAddr)
+	log.Printf("Server id %q listening to %q", id, bindAddr)
 
 	srv := &http.Server{
 		Addr: bindAddr,

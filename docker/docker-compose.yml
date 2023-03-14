@@ -26,10 +26,20 @@ services:
 
   short-url:
     image: short-url
-    container_name: shorturl
+    hostname: shorturl
     depends_on: [mongo]
-    ports:
-      - "8800:8800"
+    expose:
+      - "8810"
     environment:
       mongo_uri: mongodb://root:p%40ssw0rd!@mongo/admin
       logrequests: "true"
+      port: 8810
+
+  nginx:
+    image: nginx:latest
+    container_name: ngnix
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on: [short-url]
+    ports:
+      - "8800:8800"
