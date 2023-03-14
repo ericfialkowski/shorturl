@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-func GetEnvStringOrDefault(key, defaultValue string) string {
+func StringOrDefault(key, defaultValue string) string {
 	envVal := os.Getenv(key)
 	if envVal == "" {
 		return defaultValue
@@ -14,7 +14,7 @@ func GetEnvStringOrDefault(key, defaultValue string) string {
 	return envVal
 }
 
-func GetEnvBoolOrDefault(key string, defaultValue bool) bool {
+func BoolOrDefault(key string, defaultValue bool) bool {
 	envVal := os.Getenv(key)
 	if envVal == "" {
 		return defaultValue
@@ -26,7 +26,7 @@ func GetEnvBoolOrDefault(key string, defaultValue bool) bool {
 	return r
 }
 
-func GetEnvIntOrDefault(key string, defaultValue int) int {
+func IntOrDefault(key string, defaultValue int) int {
 	envVal := os.Getenv(key)
 	if envVal == "" {
 		return defaultValue
@@ -38,11 +38,8 @@ func GetEnvIntOrDefault(key string, defaultValue int) int {
 	return r
 }
 
-/*
-	GetEnvDurationOrDefault returns a time.Duration that is determined by using the
-	time.ParseDuration function.
-*/
-func GetEnvDurationOrDefault(key string, defaultValue time.Duration) time.Duration {
+// DurationOrDefault returns a time.Duration that is determined by using the time.ParseDuration function.
+func DurationOrDefault(key string, defaultValue time.Duration) time.Duration {
 	envVal := os.Getenv(key)
 	if envVal == "" {
 		return defaultValue
