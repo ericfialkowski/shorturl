@@ -10,16 +10,16 @@ import (
 	"os"
 	"os/signal"
 	"shorturl/dao"
-	"shorturl/environment"
+	"shorturl/env"
 	"shorturl/handlers"
 	"shorturl/status"
 	"time"
 )
 
 var (
-	port     = environment.GetEnvIntOrDefault("port", 8800)
-	ip       = environment.GetEnvStringOrDefault("ip", "")
-	mongoUri = environment.GetEnvStringOrDefault("mongo_uri", "") // mongodb://root:p%40ssw0rd!@localhost/admin
+	port     = env.IntOrDefault("port", 8800)
+	ip       = env.StringOrDefault("ip", "")
+	mongoUri = env.StringOrDefault("mongo_uri", "") // mongodb://root:p%40ssw0rd!@localhost/admin
 )
 
 func main() {
@@ -42,7 +42,7 @@ func main() {
 
 	// add status handler
 	s := status.NewStatus()
-	ticker := time.NewTicker(environment.GetEnvDurationOrDefault("status_interval", time.Second*30))
+	ticker := time.NewTicker(env.DurationOrDefault("status_interval", time.Second*30))
 	go func() {
 		for range ticker.C {
 			if !db.IsLikelyOk() {
@@ -65,9 +65,9 @@ func main() {
 	srv := &http.Server{
 		Addr: bindAddr,
 		// Good practice to set timeouts to avoid Slowloris attacks.
-		WriteTimeout: environment.GetEnvDurationOrDefault("http_write_timeout", time.Second*10),
-		ReadTimeout:  environment.GetEnvDurationOrDefault("http_read_timeout", time.Second*15),
-		IdleTimeout:  environment.GetEnvDurationOrDefault("http_idle_timeout", time.Second*60),
+		WriteTimeout: env.DurationOrDefault("http_write_timeout", time.Second*10),
+		ReadTimeout:  env.DurationOrDefault("http_read_timeout", time.Second*15),
+		IdleTimeout:  env.DurationOrDefault("http_idle_timeout", time.Second*60),
 		Handler:      e,
 	}
 
@@ -90,7 +90,7 @@ func main() {
 	<-c
 
 	// Create a deadline to wait for.
-	ctx, cancel := context.WithTimeout(context.Background(), environment.GetEnvDurationOrDefault("shutdown_wait_timeout", time.Second*15))
+	ctx, cancel := context.WithTimeout(context.Background(), env.DurationOrDefault("shutdown_wait_timeout", time.Second*15))
 	defer cancel()
 	// Doesn't block if no connections, but will otherwise wait
 	// until the timeout deadline.

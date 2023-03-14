@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"shorturl/environment"
+	"shorturl/env"
 	"strings"
 	"sync"
 	"time"
@@ -37,7 +37,7 @@ const (
 var once sync.Once
 
 func newContext() (context.Context, context.CancelFunc) {
-	return context.WithTimeout(context.Background(), environment.GetEnvDurationOrDefault("mongo_timeout", 10*time.Second))
+	return context.WithTimeout(context.Background(), env.DurationOrDefault("mongo_timeout", 10*time.Second))
 }
 
 func CreateMongoDB(uri string) ShortUrlDao {

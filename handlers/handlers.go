@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"shorturl/dao"
-	"shorturl/environment"
+	"shorturl/env"
 	"shorturl/status"
 	"sync/atomic"
 	"time"
@@ -175,7 +175,7 @@ func (h *Handlers) SetUp(e *echo.Echo) {
 	e.Use(h.statusHitsCounter())
 	e.Use(middleware.LoggerWithConfig(middleware.LoggerConfig{
 		Skipper: func(c echo.Context) bool {
-			return !environment.GetEnvBoolOrDefault("logrequests", true)
+			return !env.BoolOrDefault("logrequests", true)
 		},
 		Format: "method=${method}, uri=${uri}, status=${status}\n",
 	}))
