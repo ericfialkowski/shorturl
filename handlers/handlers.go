@@ -201,6 +201,7 @@ func (h *Handlers) statusHitsCounter() echo.MiddlewareFunc {
 	}
 }
 
+// idHeader adds the server's id to the "X-SERVER-ID" response header
 func (h *Handlers) idHeader() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
