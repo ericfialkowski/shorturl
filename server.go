@@ -3,16 +3,16 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/ericfialkowski/shorturl/dao"
+	"github.com/ericfialkowski/shorturl/env"
+	"github.com/ericfialkowski/shorturl/handlers"
+	"github.com/ericfialkowski/shorturl/status"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
-	"shorturl/dao"
-	"shorturl/env"
-	"shorturl/handlers"
-	"shorturl/status"
 	"time"
 )
 
@@ -23,10 +23,7 @@ var (
 )
 
 func main() {
-	id := "unknown"
-	if uuid, err := uuid.NewUUID(); err == nil {
-		id = uuid.String()
-	}
+	id := uuid.New().String()
 
 	var db dao.ShortUrlDao
 	if len(mongoUri) == 0 {

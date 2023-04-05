@@ -3,14 +3,14 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/ericfialkowski/shorturl/dao"
+	"github.com/ericfialkowski/shorturl/env"
+	"github.com/ericfialkowski/shorturl/status"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"html/template"
 	"net/http"
 	"net/url"
-	"shorturl/dao"
-	"shorturl/env"
-	"shorturl/status"
 	"sync/atomic"
 	"time"
 )
@@ -205,7 +205,7 @@ func (h *Handlers) statusHitsCounter() echo.MiddlewareFunc {
 func (h *Handlers) idHeader() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			c.Response().Header().Add("X-SERVER-ID", h.id)
+			c.Response().Header().Add("x-instance-uuid", h.id)
 			return next(c)
 		}
 	}

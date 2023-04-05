@@ -3,8 +3,8 @@ package dao
 import (
 	"context"
 	"fmt"
+	"github.com/ericfialkowski/shorturl/env"
 	"log"
-	"shorturl/env"
 	"strings"
 	"sync"
 	"time"

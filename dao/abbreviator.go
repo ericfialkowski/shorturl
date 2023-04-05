@@ -2,9 +2,9 @@ package dao
 
 import (
 	"fmt"
+	"github.com/ericfialkowski/shorturl/env"
+	"github.com/ericfialkowski/shorturl/rando"
 	"log"
-	"shorturl/env"
-	"shorturl/rando"
 )
 
 var keySize = env.IntOrDefault("startingkeysize", 1)

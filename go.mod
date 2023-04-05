@@ -1,4 +1,4 @@
-module shorturl
+module github.com/ericfialkowski/shorturl
 
 go 1.20
 
