@@ -150,9 +150,9 @@ func (d *MongoDB) GetUrl(abv string) (string, error) {
 	go func() {
 		ctx, cancel := newContext()
 		defer cancel()
-		update := bson.D{{"$inc", bson.D{{hitsFieldName, 1}}},
-			{"$currentDate", bson.D{{lastAccessFieldName, true}}},
-			{"$inc", bson.D{{dailyHitsFieldName + "." + Date(), 1}}},
+		update := bson.D{{Key: "$inc", Value: bson.D{{Key: hitsFieldName, Value: 1}}},
+			{Key: "$currentDate", Value: bson.D{{Key: lastAccessFieldName, Value: true}}},
+			{Key: "$inc", Value: bson.D{{Key: dailyHitsFieldName + "." + Date(), Value: 1}}},
 		}
 		if _, err := collection.UpdateOne(ctx, abvKey, update); err != nil {
 			log.Printf("Error updating doc %v", err)

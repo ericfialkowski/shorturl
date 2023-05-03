@@ -21,9 +21,6 @@ const (
 	Warning
 	Critical
 	Unknown
-
-	contentType string = "Content-Type"
-	appJson     string = "application/json"
 )
 
 func NewStatus() *SimpleStatus {
