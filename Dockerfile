@@ -1,12 +1,12 @@
 # Code Build
-FROM golang:1.20-alpine3.17 as  build
+FROM golang:1.21-alpine3.18 as  build
 
 WORKDIR /go/src/app
 COPY . .
 RUN go build -v
 
 # Create Deployable
-FROM alpine:3.17 as final
+FROM scratch
 COPY --from=build /go/src/app/*.html /
 COPY --from=build /go/src/app/shorturl /shorturl
 
