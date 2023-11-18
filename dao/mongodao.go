@@ -41,7 +41,7 @@ func newContext() (context.Context, context.CancelFunc) {
 }
 
 func CreateMongoDB(uri string) ShortUrlDao {
-	client, err := mongo.NewClient(options.Client().
+	client, err := mongo.Connect(context.Background(), options.Client().
 		ApplyURI(uri).
 		SetAppName("shorturl"))
 
@@ -50,9 +50,6 @@ func CreateMongoDB(uri string) ShortUrlDao {
 	}
 	ctx, cancel := newContext()
 	defer cancel()
-	if err = client.Connect(ctx); err != nil {
-		log.Fatalf("Couldn't connect: %v", err)
-	}
 
 	once.Do(func() {
 		mod := mongo.IndexModel{
