@@ -1,18 +1,23 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/ericfialkowski/shorturl/dao"
-	"github.com/ericfialkowski/shorturl/env"
-	"github.com/ericfialkowski/shorturl/status"
-	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
 	"html/template"
 	"net/http"
 	"net/url"
 	"sync/atomic"
 	"time"
+
+	"github.com/ericfialkowski/shorturl/dao"
+	"github.com/ericfialkowski/shorturl/env"
+	"github.com/ericfialkowski/shorturl/status"
+	"github.com/ericfialkowski/shorturl/telemetry"
+	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 )
 
 const (
@@ -25,11 +30,12 @@ const (
 
 type (
 	Handlers struct {
-		dao       dao.ShortUrlDao
-		metrics   metrics
-		startTime time.Time
-		status    *status.SimpleStatus
-		id        string
+		dao         dao.ShortUrlDao
+		metrics     metrics
+		otelMetrics *telemetry.Metrics
+		startTime   time.Time
+		status      *status.SimpleStatus
+		id          string
 	}
 
 	metrics struct {
@@ -59,12 +65,14 @@ func createReturn(abv string) urlReturn {
 	}
 }
 
-func CreateHandlers(d dao.ShortUrlDao, s *status.SimpleStatus, id string) Handlers {
-	return Handlers{dao: d, metrics: metrics{}, startTime: time.Now(), status: s, id: id}
+func CreateHandlers(d dao.ShortUrlDao, s *status.SimpleStatus, id string, otel *telemetry.Metrics) Handlers {
+	return Handlers{dao: d, metrics: metrics{}, otelMetrics: otel, startTime: time.Now(), status: s, id: id}
 }
 
 func (h *Handlers) getHandler(c echo.Context) error {
 	atomic.AddUint64(&h.metrics.Redirects, 1)
+	h.recordOtelCounter(c.Request().Context(), "redirect")
+
 	abv := c.Param("abv")
 	u, err := h.dao.GetUrl(abv)
 
@@ -82,6 +90,8 @@ func (h *Handlers) getHandler(c echo.Context) error {
 
 func (h *Handlers) statsHandler(c echo.Context) error {
 	atomic.AddUint64(&h.metrics.UrlStats, 1)
+	h.recordOtelCounter(c.Request().Context(), "stats")
+
 	abv := c.Param("abv")
 	stats, err := h.dao.GetStats(abv)
 
@@ -98,6 +108,8 @@ func (h *Handlers) statsHandler(c echo.Context) error {
 
 func (h *Handlers) addHandler(c echo.Context) error {
 	atomic.AddUint64(&h.metrics.NewUrls, 1)
+	h.recordOtelCounter(c.Request().Context(), "create")
+
 	var u string
 
 	if err := json.NewDecoder(c.Request().Body).Decode(&u); err != nil {
@@ -135,6 +147,8 @@ func (h *Handlers) addHandler(c echo.Context) error {
 
 func (h *Handlers) deleteHandler(c echo.Context) error {
 	atomic.AddUint64(&h.metrics.Deletes, 1)
+	h.recordOtelCounter(c.Request().Context(), "delete")
+
 	abv := c.Param("abv")
 	err := h.dao.DeleteAbv(abv)
 
@@ -173,6 +187,7 @@ func (h *Handlers) SetUp(e *echo.Echo) {
 	e.POST("/", h.addHandler)
 
 	e.Use(h.statusHitsCounter())
+	e.Use(h.otelRequestDuration())
 	e.Use(middleware.LoggerWithConfig(middleware.LoggerConfig{
 		Skipper: func(c echo.Context) bool {
 			return !env.BoolOrDefault("logrequests", true)
@@ -207,6 +222,51 @@ func (h *Handlers) idHeader() echo.MiddlewareFunc {
 		return func(c echo.Context) error {
 			c.Response().Header().Add("x-instance-uuid", h.id)
 			return next(c)
+		}
+	}
+}
+
+// recordOtelCounter records a counter increment for the given operation type.
+func (h *Handlers) recordOtelCounter(ctx context.Context, operation string) {
+	if h.otelMetrics == nil {
+		return
+	}
+
+	switch operation {
+	case "redirect":
+		h.otelMetrics.Redirects.Add(ctx, 1)
+	case "stats":
+		h.otelMetrics.StatsRequests.Add(ctx, 1)
+	case "create":
+		h.otelMetrics.UrlsCreated.Add(ctx, 1)
+	case "delete":
+		h.otelMetrics.UrlsDeleted.Add(ctx, 1)
+	}
+}
+
+// otelRequestDuration returns middleware that records request duration as an OTel histogram.
+func (h *Handlers) otelRequestDuration() echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			if h.otelMetrics == nil {
+				return next(c)
+			}
+
+			start := time.Now()
+			err := next(c)
+			duration := float64(time.Since(start).Milliseconds())
+
+			h.otelMetrics.RequestDuration.Record(
+				c.Request().Context(),
+				duration,
+				metric.WithAttributes(
+					attribute.String("method", c.Request().Method),
+					attribute.String("path", c.Path()),
+					attribute.Int("status", c.Response().Status),
+				),
+			)
+
+			return err
 		}
 	}
 }

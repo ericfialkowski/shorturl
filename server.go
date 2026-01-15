@@ -3,17 +3,19 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/ericfialkowski/shorturl/dao"
-	"github.com/ericfialkowski/shorturl/env"
-	"github.com/ericfialkowski/shorturl/handlers"
-	"github.com/ericfialkowski/shorturl/status"
-	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"time"
+
+	"github.com/ericfialkowski/shorturl/dao"
+	"github.com/ericfialkowski/shorturl/env"
+	"github.com/ericfialkowski/shorturl/handlers"
+	"github.com/ericfialkowski/shorturl/status"
+	"github.com/ericfialkowski/shorturl/telemetry"
+	"github.com/google/uuid"
+	"github.com/labstack/echo/v4"
 )
 
 var (
@@ -24,6 +26,16 @@ var (
 
 func main() {
 	id := uuid.New().String()
+	ctx := context.Background()
+
+	// Initialize OpenTelemetry metrics
+	otelMetrics, err := telemetry.NewMetrics(ctx)
+	if err != nil {
+		log.Printf("Warning: failed to initialize OpenTelemetry metrics: %v", err)
+	}
+	if otelMetrics != nil {
+		defer otelMetrics.Shutdown(ctx)
+	}
 
 	var db dao.ShortUrlDao
 	if len(mongoUri) == 0 {
@@ -53,7 +65,7 @@ func main() {
 	//
 	// add other handlers
 	//
-	h := handlers.CreateHandlers(db, s, id)
+	h := handlers.CreateHandlers(db, s, id, otelMetrics)
 	h.SetUp(e)
 
 	bindAddr := fmt.Sprintf("%s:%d", ip, port)

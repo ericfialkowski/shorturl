@@ -1,5 +1,5 @@
 # Code Build
-FROM golang:1.21-alpine3.18 as  build
+FROM golang:1.25-alpine3.23 AS  build
 
 WORKDIR /go/src/app
 COPY . .
@@ -12,9 +12,9 @@ COPY --from=build /go/src/app/shorturl /shorturl
 
 EXPOSE 8800
 
-ENV mongo_uri ""
-ENV logrequests false
-ENV keygrowretries 10
-ENV startingkeysize 2
+ENV mongo_uri=""
+ENV logrequests=false
+ENV keygrowretries=10
+ENV startingkeysize=2
 
 CMD ["/shorturl"]
