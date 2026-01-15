@@ -1,7 +1,4 @@
-version: '3.7'
-
 services:
-
   mongo:
     image: mongo
     container_name: shorturldb
@@ -36,6 +33,9 @@ services:
       - "8889:8889"   # Prometheus exporter (application metrics)
 
   short-url:
+    build:
+      context: ..
+      dockerfile: Dockerfile
     image: short-url
     hostname: shorturl
     depends_on: [mongo, otel-collector]
