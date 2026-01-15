@@ -9,10 +9,10 @@ import (
 	"sync"
 	"time"
 
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
-	"go.mongodb.org/mongo-driver/mongo/readpref"
+	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
+	"go.mongodb.org/mongo-driver/v2/mongo/readpref"
 )
 
 /*
@@ -41,7 +41,7 @@ func newContext() (context.Context, context.CancelFunc) {
 }
 
 func CreateMongoDB(uri string) ShortUrlDao {
-	client, err := mongo.Connect(context.Background(), options.Client().
+	client, err := mongo.Connect(options.Client().
 		ApplyURI(uri).
 		SetAppName("shorturl"))
 
