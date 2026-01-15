@@ -24,16 +24,29 @@ services:
       ME_CONFIG_BASICAUTH_USERNAME: dbadmin
       ME_CONFIG_BASICAUTH_PASSWORD: p@ssw0rd!
 
+  otel-collector:
+    image: otel/opentelemetry-collector:latest
+    container_name: otel-collector
+    restart: always
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "4318:4318"   # OTLP HTTP receiver
+      - "8888:8888"   # Prometheus metrics (collector self-metrics)
+      - "8889:8889"   # Prometheus exporter (application metrics)
+
   short-url:
     image: short-url
     hostname: shorturl
-    depends_on: [mongo]
+    depends_on: [mongo, otel-collector]
     expose:
       - "8810"
     environment:
       mongo_uri: mongodb://root:p%40ssw0rd!@mongo/admin
       logrequests: "true"
       port: 8810
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_SERVICE_NAME: shorturl
 
   nginx:
     image: nginx:latest
