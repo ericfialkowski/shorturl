@@ -19,9 +19,10 @@ import (
 )
 
 var (
-	port     = env.IntOrDefault("port", 8800)
-	ip       = env.StringOrDefault("ip", "")
-	mongoUri = env.StringOrDefault("mongo_uri", "") // mongodb://root:p%40ssw0rd!@localhost/admin
+	port        = env.IntOrDefault("port", 8800)
+	ip          = env.StringOrDefault("ip", "")
+	mongoUri    = env.StringOrDefault("mongo_uri", "")    // mongodb://root:p%40ssw0rd!@localhost/admin
+	postgresUri = env.StringOrDefault("postgres_uri", "") // postgres://user:password@localhost:5432/shorturl
 )
 
 func main() {
@@ -38,11 +39,16 @@ func main() {
 	}
 
 	var db dao.ShortUrlDao
-	if len(mongoUri) == 0 {
+	switch {
+	case len(postgresUri) > 0:
+		db = dao.CreatePostgresDB(postgresUri)
+		log.Println("Using PostgreSQL database")
+	case len(mongoUri) > 0:
+		db = dao.CreateMongoDB(mongoUri)
+		log.Println("Using MongoDB database")
+	default:
 		db = dao.CreateMemoryDB()
 		log.Println("Warning: running with in-memory database")
-	} else {
-		db = dao.CreateMongoDB(mongoUri)
 	}
 	defer db.Cleanup()
 

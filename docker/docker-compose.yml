@@ -1,8 +1,10 @@
 services:
+  # ============== MongoDB Profile ==============
   mongo:
     image: mongo
     container_name: shorturldb
     restart: always
+    profiles: [mongo]
     ports:
       - "27017:27017"
     environment:
@@ -13,6 +15,7 @@ services:
     image: mongo-express
     container_name: shorturldb-express
     restart: always
+    profiles: [mongo]
     depends_on: [mongo]
     ports:
       - "8081:8081"
@@ -21,23 +24,13 @@ services:
       ME_CONFIG_BASICAUTH_USERNAME: dbadmin
       ME_CONFIG_BASICAUTH_PASSWORD: p@ssw0rd!
 
-  otel-collector:
-    image: otel/opentelemetry-collector:latest
-    container_name: otel-collector
-    restart: always
-    volumes:
-      - ./otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
-    ports:
-      - "4318:4318"   # OTLP HTTP receiver
-      - "8888:8888"   # Prometheus metrics (collector self-metrics)
-      - "8889:8889"   # Prometheus exporter (application metrics)
-
-  short-url:
+  short-url-mongo:
     build:
       context: ..
       dockerfile: Dockerfile
     image: short-url
     hostname: shorturl
+    profiles: [mongo]
     depends_on: [mongo, otel-collector]
     expose:
       - "8810"
@@ -48,11 +41,114 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
       OTEL_SERVICE_NAME: shorturl
 
-  nginx:
+  # ============== PostgreSQL Profile ==============
+  postgres:
+    image: postgres:16-alpine
+    container_name: shorturldb-postgres
+    restart: always
+    profiles: [postgres]
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: shorturl
+      POSTGRES_PASSWORD: p@ssw0rd!
+      POSTGRES_DB: shorturl
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  pgadmin:
+    image: dcagatay/pwless-pgadmin4:latest
+    container_name: shorturldb-pgadmin
+    restart: always
+    profiles: [postgres]
+    depends_on: [postgres]
+    ports:
+      - "8082:80"
+    environment:
+      POSTGRES_USER: shorturl
+      POSTGRES_PASSWORD: p@ssw0rd!
+      POSTGRES_DB: shorturl
+      POSTGRES_HOST: postgres
+      PGADMIN_DISABLE_POSTFIX: true
+
+  short-url-postgres:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: short-url
+    hostname: shorturl
+    profiles: [postgres]
+    depends_on: [postgres, otel-collector]
+    expose:
+      - "8810"
+    environment:
+      postgres_uri: postgres://shorturl:p%40ssw0rd!@postgres:5432/shorturl
+      logrequests: "true"
+      port: 8810
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_SERVICE_NAME: shorturl
+
+  # ============== In-Memory Profile ==============
+  short-url-memory:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: short-url
+    hostname: shorturl
+    profiles: [memory]
+    depends_on: [otel-collector]
+    expose:
+      - "8810"
+    environment:
+      # No database URI - uses in-memory storage
+      logrequests: "true"
+      port: 8810
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_SERVICE_NAME: shorturl
+
+  nginx-memory:
     image: nginx:latest
-    container_name: ngnix
+    container_name: nginx
+    profiles: [memory]
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
-    depends_on: [short-url]
+    depends_on: [short-url-memory]
     ports:
       - "8800:8800"
+
+  # ============== Shared Services ==============
+  otel-collector:
+    image: otel/opentelemetry-collector:latest
+    container_name: otel-collector
+    restart: always
+    profiles: [mongo, postgres, memory]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "4318:4318"   # OTLP HTTP receiver
+      - "8888:8888"   # Prometheus metrics (collector self-metrics)
+      - "8889:8889"   # Prometheus exporter (application metrics)
+
+  nginx-mongo:
+    image: nginx:latest
+    container_name: nginx
+    profiles: [mongo]
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on: [short-url-mongo]
+    ports:
+      - "8800:8800"
+
+  nginx-postgres:
+    image: nginx:latest
+    container_name: nginx
+    profiles: [postgres]
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on: [short-url-postgres]
+    ports:
+      - "8800:8800"
+
+volumes:
+  postgres_data:
+  pgadmin_data:
