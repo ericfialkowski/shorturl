@@ -21,6 +21,33 @@ services:
       ME_CONFIG_BASICAUTH_USERNAME: dbadmin
       ME_CONFIG_BASICAUTH_PASSWORD: p@ssw0rd!
 
+  postgres:
+    image: postgres:16-alpine
+    container_name: shorturldb-postgres
+    restart: always
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: shorturl
+      POSTGRES_PASSWORD: p@ssw0rd!
+      POSTGRES_DB: shorturl
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  pgadmin:
+    image: dcagatay/pwless-pgadmin4:latest
+    container_name: shorturldb-pgadmin
+    restart: always
+    depends_on: [postgres]
+    ports:
+      - "8082:80"
+    environment:
+      POSTGRES_USER: shorturl
+      POSTGRES_PASSWORD: p@ssw0rd!
+      POSTGRES_DB: shorturl
+      POSTGRES_HOST: postgres
+      PGADMIN_DISABLE_POSTFIX: tru
+
   otel-collector:
     image: otel/opentelemetry-collector:latest
     container_name: otel-collector
@@ -38,11 +65,13 @@ services:
       dockerfile: Dockerfile
     image: short-url
     hostname: shorturl
-    depends_on: [mongo, otel-collector]
+    depends_on: [mongo, postgres, otel-collector]
     expose:
       - "8810"
     environment:
-      mongo_uri: mongodb://root:p%40ssw0rd!@mongo/admin
+      # Use postgres_uri OR mongo_uri (postgres takes priority if both set)
+      postgres_uri: postgres://shorturl:p%40ssw0rd!@postgres:5432/shorturl
+      #mongo_uri: mongodb://root:p%40ssw0rd!@mongo/admin
       logrequests: "true"
       port: 8810
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
@@ -56,3 +85,7 @@ services:
     depends_on: [short-url]
     ports:
       - "8800:8800"
+
+volumes:
+  postgres_data:
+  pgadmin_data:
