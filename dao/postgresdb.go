@@ -2,7 +2,6 @@ package dao
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
@@ -49,7 +48,7 @@ func (d *PostgresDB) initSchema() {
 	ctx, cancel := newPgContext()
 	defer cancel()
 
-	// Create the table if it doesn't exist
+	// Create the main short_urls table
 	createTableSQL := `
 		CREATE TABLE IF NOT EXISTS short_urls (
 			id SERIAL PRIMARY KEY,
@@ -57,7 +56,6 @@ func (d *PostgresDB) initSchema() {
 			url TEXT NOT NULL UNIQUE,
 			hits INTEGER NOT NULL DEFAULT 0,
 			last_access TIMESTAMP WITH TIME ZONE,
-			daily_hits JSONB NOT NULL DEFAULT '{}'::jsonb,
 			created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 		);
 		CREATE INDEX IF NOT EXISTS idx_short_urls_abbreviation ON short_urls(abbreviation);
@@ -65,7 +63,24 @@ func (d *PostgresDB) initSchema() {
 	`
 
 	if _, err := d.pool.Exec(ctx, createTableSQL); err != nil {
-		log.Printf("Error creating schema: %v", err)
+		log.Printf("Error creating short_urls table: %v", err)
+	}
+
+	// Create the daily_hits table for tracking hits per day
+	createDailyHitsSQL := `
+		CREATE TABLE IF NOT EXISTS daily_hits (
+			id SERIAL PRIMARY KEY,
+			short_url_id INTEGER NOT NULL REFERENCES short_urls(id) ON DELETE CASCADE,
+			hit_date DATE NOT NULL,
+			hits INTEGER NOT NULL DEFAULT 0,
+			UNIQUE(short_url_id, hit_date)
+		);
+		CREATE INDEX IF NOT EXISTS idx_daily_hits_short_url_id ON daily_hits(short_url_id);
+		CREATE INDEX IF NOT EXISTS idx_daily_hits_date ON daily_hits(hit_date);
+	`
+
+	if _, err := d.pool.Exec(ctx, createDailyHitsSQL); err != nil {
+		log.Printf("Error creating daily_hits table: %v", err)
 	}
 }
 
@@ -89,8 +104,8 @@ func (d *PostgresDB) Save(abv string, url string) error {
 	defer cancel()
 
 	sql := `
-		INSERT INTO short_urls (abbreviation, url, hits, daily_hits)
-		VALUES ($1, $2, 0, '{}'::jsonb)
+		INSERT INTO short_urls (abbreviation, url, hits)
+		VALUES ($1, $2, 0)
 		ON CONFLICT (abbreviation) DO NOTHING
 	`
 
@@ -141,8 +156,9 @@ func (d *PostgresDB) GetUrl(abv string) (string, error) {
 	defer cancel()
 
 	var url string
-	sql := `SELECT url FROM short_urls WHERE abbreviation = $1`
-	err := d.pool.QueryRow(ctx, sql, abv).Scan(&url)
+	var shortUrlId int
+	sql := `SELECT id, url FROM short_urls WHERE abbreviation = $1`
+	err := d.pool.QueryRow(ctx, sql, abv).Scan(&shortUrlId, &url)
 
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -156,20 +172,26 @@ func (d *PostgresDB) GetUrl(abv string) (string, error) {
 		ctx, cancel := newPgContext()
 		defer cancel()
 
-		today := Date()
+		// Update total hits and last_access in short_urls
 		updateSQL := `
 			UPDATE short_urls
 			SET hits = hits + 1,
-				last_access = CURRENT_TIMESTAMP,
-				daily_hits = jsonb_set(
-					daily_hits,
-					$1::text[],
-					to_jsonb(COALESCE((daily_hits->>$2)::int, 0) + 1)
-				)
-			WHERE abbreviation = $3
+				last_access = CURRENT_TIMESTAMP
+			WHERE id = $1
 		`
-		if _, err := d.pool.Exec(ctx, updateSQL, []string{today}, today, abv); err != nil {
-			log.Printf("Error updating stats: %v", err)
+		if _, err := d.pool.Exec(ctx, updateSQL, shortUrlId); err != nil {
+			log.Printf("Error updating short_urls stats: %v", err)
+		}
+
+		// Insert or update daily hit count
+		dailyHitSQL := `
+			INSERT INTO daily_hits (short_url_id, hit_date, hits)
+			VALUES ($1, CURRENT_DATE, 1)
+			ON CONFLICT (short_url_id, hit_date)
+			DO UPDATE SET hits = daily_hits.hits + 1
+		`
+		if _, err := d.pool.Exec(ctx, dailyHitSQL, shortUrlId); err != nil {
+			log.Printf("Error updating daily_hits: %v", err)
 		}
 	}()
 
@@ -200,20 +222,21 @@ func (d *PostgresDB) GetStats(abv string) (ShortUrl, error) {
 	defer cancel()
 
 	var data ShortUrl
-	var dailyHitsJSON []byte
+	var shortUrlId int
 	var lastAccess *time.Time
 
+	// Get main short_url data
 	sql := `
-		SELECT abbreviation, url, hits, last_access, daily_hits
+		SELECT id, abbreviation, url, hits, last_access
 		FROM short_urls
 		WHERE abbreviation = $1
 	`
 	err := d.pool.QueryRow(ctx, sql, abv).Scan(
+		&shortUrlId,
 		&data.Abbreviation,
 		&data.Url,
 		&data.Hits,
 		&lastAccess,
-		&dailyHitsJSON,
 	)
 
 	if err != nil {
@@ -228,12 +251,29 @@ func (d *PostgresDB) GetStats(abv string) (ShortUrl, error) {
 		data.LastAccess = *lastAccess
 	}
 
-	// Parse the JSONB daily_hits into map
+	// Get daily hits from separate table
 	data.DailyHits = make(map[string]int)
-	if len(dailyHitsJSON) > 0 {
-		if err := json.Unmarshal(dailyHitsJSON, &data.DailyHits); err != nil {
-			log.Printf("Error parsing daily_hits JSON: %v", err)
+	dailyHitsSQL := `
+		SELECT hit_date, hits
+		FROM daily_hits
+		WHERE short_url_id = $1
+		ORDER BY hit_date DESC
+	`
+	rows, err := d.pool.Query(ctx, dailyHitsSQL, shortUrlId)
+	if err != nil {
+		log.Printf("Error querying daily_hits: %v", err)
+		return data, nil
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var hitDate time.Time
+		var hits int
+		if err := rows.Scan(&hitDate, &hits); err != nil {
+			log.Printf("Error scanning daily_hits row: %v", err)
+			continue
 		}
+		data.DailyHits[hitDate.Format("2006-01-02")] = hits
 	}
 
 	return data, nil
