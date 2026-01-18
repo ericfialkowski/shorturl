@@ -1,7 +1,7 @@
 package status
 
 import (
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"net/http"
 	"time"
 )
@@ -61,7 +61,7 @@ func (s *SimpleStatus) Unknown(message string) {
 /*
 Handler is used for a slowly changing status where we want to automatically update the timestamp to the current request time
 */
-func (s *SimpleStatus) Handler(c echo.Context) error {
+func (s *SimpleStatus) Handler(c *echo.Context) error {
 	return c.JSON(http.StatusOK, s.Current())
 }
 
@@ -69,6 +69,6 @@ func (s *SimpleStatus) Handler(c echo.Context) error {
 BackgroundHandler is used when there will be a background process that updates the status,
 and we want to see the timestamp of when the background task ran last
 */
-func (s *SimpleStatus) BackgroundHandler(c echo.Context) error {
+func (s *SimpleStatus) BackgroundHandler(c *echo.Context) error {
 	return c.JSON(http.StatusOK, s)
 }
