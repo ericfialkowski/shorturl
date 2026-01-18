@@ -14,8 +14,8 @@ import (
 	"github.com/ericfialkowski/shorturl/env"
 	"github.com/ericfialkowski/shorturl/status"
 	"github.com/ericfialkowski/shorturl/telemetry"
-	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
+	"github.com/labstack/echo/v5"
+	"github.com/labstack/echo/v5/middleware"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 )
@@ -69,7 +69,7 @@ func CreateHandlers(d dao.ShortUrlDao, s *status.SimpleStatus, id string, otel *
 	return Handlers{dao: d, metrics: metrics{}, otelMetrics: otel, startTime: time.Now(), status: s, id: id}
 }
 
-func (h *Handlers) getHandler(c echo.Context) error {
+func (h *Handlers) getHandler(c *echo.Context) error {
 	atomic.AddUint64(&h.metrics.Redirects, 1)
 	h.recordOtelCounter(c.Request().Context(), "redirect")
 
@@ -84,11 +84,11 @@ func (h *Handlers) getHandler(c echo.Context) error {
 		return c.String(http.StatusNotFound, "No link found")
 	}
 
-	http.Redirect(c.Response().Writer, c.Request(), u, http.StatusFound)
+	http.Redirect(c.Response(), c.Request(), u, http.StatusFound)
 	return nil
 }
 
-func (h *Handlers) statsHandler(c echo.Context) error {
+func (h *Handlers) statsHandler(c *echo.Context) error {
 	atomic.AddUint64(&h.metrics.UrlStats, 1)
 	h.recordOtelCounter(c.Request().Context(), "stats")
 
@@ -106,7 +106,7 @@ func (h *Handlers) statsHandler(c echo.Context) error {
 	return c.JSON(http.StatusOK, stats)
 }
 
-func (h *Handlers) addHandler(c echo.Context) error {
+func (h *Handlers) addHandler(c *echo.Context) error {
 	atomic.AddUint64(&h.metrics.NewUrls, 1)
 	h.recordOtelCounter(c.Request().Context(), "create")
 
@@ -145,7 +145,7 @@ func (h *Handlers) addHandler(c echo.Context) error {
 	return c.JSON(http.StatusOK, r)
 }
 
-func (h *Handlers) deleteHandler(c echo.Context) error {
+func (h *Handlers) deleteHandler(c *echo.Context) error {
 	atomic.AddUint64(&h.metrics.Deletes, 1)
 	h.recordOtelCounter(c.Request().Context(), "delete")
 
@@ -159,7 +159,7 @@ func (h *Handlers) deleteHandler(c echo.Context) error {
 	return c.JSON(http.StatusOK, "deleted")
 }
 
-func (h *Handlers) statsUiHandler(c echo.Context) error {
+func (h *Handlers) statsUiHandler(c *echo.Context) error {
 	abv := c.Param("abv")
 	stats, err := h.dao.GetStats(abv)
 
@@ -172,7 +172,7 @@ func (h *Handlers) statsUiHandler(c echo.Context) error {
 	}
 
 	tmpl := template.Must(template.ParseFiles("stats.html"))
-	return tmpl.Execute(c.Response().Writer, stats)
+	return tmpl.Execute(c.Response(), stats)
 }
 
 func (h *Handlers) SetUp(e *echo.Echo) {
@@ -188,16 +188,22 @@ func (h *Handlers) SetUp(e *echo.Echo) {
 
 	e.Use(h.statusHitsCounter())
 	e.Use(h.otelRequestDuration())
-	e.Use(middleware.LoggerWithConfig(middleware.LoggerConfig{
-		Skipper: func(c echo.Context) bool {
+	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
+		Skipper: func(c *echo.Context) bool {
 			return !env.BoolOrDefault("logrequests", true)
 		},
-		Format: "method=${method}, uri=${uri}, status=${status}\n",
+		LogMethod: true,
+		LogURI:    true,
+		LogStatus: true,
+		LogValuesFunc: func(c *echo.Context, v middleware.RequestLoggerValues) error {
+			fmt.Printf("method=%s, uri=%s, status=%d\n", v.Method, v.URI, v.Status)
+			return nil
+		},
 	}))
 	e.Use(h.idHeader())
 }
 
-func (h *Handlers) metricsHandler(c echo.Context) error {
+func (h *Handlers) metricsHandler(c *echo.Context) error {
 	atomic.AddUint64(&h.metrics.Metrics, 1)
 	m := h.metrics
 	m.Uptime = time.Since(h.startTime).String()
@@ -207,7 +213,7 @@ func (h *Handlers) metricsHandler(c echo.Context) error {
 func (h *Handlers) statusHitsCounter() echo.MiddlewareFunc {
 	// using this mechanism since the status handler is in a different package
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
+		return func(c *echo.Context) error {
 			if c.Path() == statusPath {
 				atomic.AddUint64(&h.metrics.Status, 1)
 			}
@@ -219,7 +225,7 @@ func (h *Handlers) statusHitsCounter() echo.MiddlewareFunc {
 // idHeader adds the server's id to the "X-SERVER-ID" response header
 func (h *Handlers) idHeader() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
+		return func(c *echo.Context) error {
 			c.Response().Header().Add("x-instance-uuid", h.id)
 			return next(c)
 		}
@@ -247,7 +253,7 @@ func (h *Handlers) recordOtelCounter(ctx context.Context, operation string) {
 // otelRequestDuration returns middleware that records request duration as an OTel histogram.
 func (h *Handlers) otelRequestDuration() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
+		return func(c *echo.Context) error {
 			if h.otelMetrics == nil {
 				return next(c)
 			}
@@ -256,13 +262,18 @@ func (h *Handlers) otelRequestDuration() echo.MiddlewareFunc {
 			err := next(c)
 			duration := float64(time.Since(start).Milliseconds())
 
+			status := http.StatusOK
+			if resp, respErr := echo.UnwrapResponse(c.Response()); respErr == nil {
+				status = resp.Status
+			}
+
 			h.otelMetrics.RequestDuration.Record(
 				c.Request().Context(),
 				duration,
 				metric.WithAttributes(
 					attribute.String("method", c.Request().Method),
 					attribute.String("path", c.Path()),
-					attribute.Int("status", c.Response().Status),
+					attribute.Int("status", status),
 				),
 			)
 
