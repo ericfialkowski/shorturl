@@ -8,18 +8,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ericfialkowski/shorturl/env"
 	_ "modernc.org/sqlite"
 )
 
 type SQLiteDB struct {
 	db *sql.DB
 	mu sync.RWMutex
-}
-
-func newSqliteContext() (time.Duration, func()) {
-	timeout := env.DurationOrDefault("sqlite_timeout", 10*time.Second)
-	return timeout, func() {}
 }
 
 // CreateSQLiteDB creates a new SQLite-backed ShortUrlDao.
