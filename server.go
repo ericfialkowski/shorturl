@@ -36,7 +36,9 @@ func main() {
 		log.Printf("Warning: failed to initialize OpenTelemetry metrics: %v", err)
 	}
 	if otelMetrics != nil {
-		defer otelMetrics.Shutdown(ctx)
+		defer func(otelMetrics *telemetry.Metrics, ctx context.Context) {
+			_ = otelMetrics.Shutdown(ctx)
+		}(otelMetrics, ctx)
 	}
 
 	var db dao.ShortUrlDao

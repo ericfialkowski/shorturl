@@ -3,11 +3,12 @@ package dao
 import (
 	"context"
 	"fmt"
-	"github.com/ericfialkowski/shorturl/env"
 	"log"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/ericfialkowski/shorturl/env"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -15,13 +16,8 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/readpref"
 )
 
-/*
-Still TODO:
-	- retries for operations
-*/
-
 type MongoDB struct {
-	client mongo.Client
+	client *mongo.Client
 }
 
 const (
@@ -72,7 +68,7 @@ func CreateMongoDB(uri string) ShortUrlDao {
 		}
 	})
 
-	return &MongoDB{client: *client}
+	return &MongoDB{client: client}
 }
 
 func (d *MongoDB) Cleanup() {

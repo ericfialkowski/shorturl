@@ -90,7 +90,7 @@ func (d *SQLiteDB) initSchema() {
 }
 
 func (d *SQLiteDB) Cleanup() {
-	d.db.Close()
+	_ = d.db.Close()
 }
 
 func (d *SQLiteDB) IsLikelyOk() bool {
@@ -269,7 +269,9 @@ func (d *SQLiteDB) GetStats(abv string) (ShortUrl, error) {
 		log.Printf("Error querying daily_hits: %v", err)
 		return data, nil
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
 
 	for rows.Next() {
 		var hitDate time.Time
