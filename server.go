@@ -23,6 +23,7 @@ var (
 	ip          = env.StringOrDefault("ip", "")
 	mongoUri    = env.StringOrDefault("mongo_uri", "")    // mongodb://root:p%40ssw0rd!@localhost/admin
 	postgresUri = env.StringOrDefault("postgres_uri", "") // postgres://user:password@localhost:5432/shorturl
+	sqlitePath  = env.StringOrDefault("sqlite_path", "")  // ./shorturl.db or :memory:
 )
 
 func main() {
@@ -46,6 +47,9 @@ func main() {
 	case len(mongoUri) > 0:
 		db = dao.CreateMongoDB(mongoUri)
 		log.Println("Using MongoDB database")
+	case len(sqlitePath) > 0:
+		db = dao.CreateSQLiteDB(sqlitePath)
+		log.Println("Using SQLite database")
 	default:
 		db = dao.CreateMemoryDB()
 		log.Println("Warning: running with in-memory database")
