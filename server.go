@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 
 	"github.com/ericfialkowski/shorturl/dao"
@@ -74,6 +75,9 @@ func main() {
 	case len(sqlitePath) > 0:
 		db = dao.CreateSQLiteDB(sqlitePath)
 		log.Println("Using SQLite database")
+		if strings.ToLower(sqlitePath) == ":memory:" {
+			log.Println("Warning: running with in-memory database")
+		}
 	default:
 		db = dao.CreateMemoryDB()
 		log.Println("Warning: running with in-memory database")
