@@ -23,6 +23,7 @@ var (
 	ip          = env.StringOrDefault("ip", "")
 	mongoUri    = env.StringOrDefault("mongo_uri", "")    // mongodb://root:p%40ssw0rd!@localhost/admin
 	postgresUri = env.StringOrDefault("postgres_uri", "") // postgres://user:password@localhost:5432/shorturl
+	mysqlDsn    = env.StringOrDefault("mysql_dsn", "")    // user:password@tcp(localhost:3306)/shorturl
 	sqlitePath  = env.StringOrDefault("sqlite_path", "")  // ./shorturl.db or :memory:
 )
 
@@ -46,6 +47,9 @@ func main() {
 	if len(postgresUri) > 0 {
 		dbOptionsSet++
 	}
+	if len(mysqlDsn) > 0 {
+		dbOptionsSet++
+	}
 	if len(mongoUri) > 0 {
 		dbOptionsSet++
 	}
@@ -53,7 +57,7 @@ func main() {
 		dbOptionsSet++
 	}
 	if dbOptionsSet > 1 {
-		log.Fatal("Error: multiple database options set. Please set only one of: POSTGRES_URI, MONGO_URI, or SQLITE_PATH")
+		log.Fatal("Error: multiple database options set. Please set only one of: POSTGRES_URI, MYSQL_DSN, MONGO_URI, or SQLITE_PATH")
 	}
 
 	var db dao.ShortUrlDao
@@ -61,6 +65,9 @@ func main() {
 	case len(postgresUri) > 0:
 		db = dao.CreatePostgresDB(postgresUri)
 		log.Println("Using PostgreSQL database")
+	case len(mysqlDsn) > 0:
+		db = dao.CreateMySQLDB(mysqlDsn)
+		log.Println("Using MySQL database")
 	case len(mongoUri) > 0:
 		db = dao.CreateMongoDB(mongoUri)
 		log.Println("Using MongoDB database")
