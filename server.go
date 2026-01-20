@@ -41,6 +41,21 @@ func main() {
 		}(otelMetrics, ctx)
 	}
 
+	// Validate that at most one database option is set
+	dbOptionsSet := 0
+	if len(postgresUri) > 0 {
+		dbOptionsSet++
+	}
+	if len(mongoUri) > 0 {
+		dbOptionsSet++
+	}
+	if len(sqlitePath) > 0 {
+		dbOptionsSet++
+	}
+	if dbOptionsSet > 1 {
+		log.Fatal("Error: multiple database options set. Please set only one of: POSTGRES_URI, MONGO_URI, or SQLITE_PATH")
+	}
+
 	var db dao.ShortUrlDao
 	switch {
 	case len(postgresUri) > 0:
