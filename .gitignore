@@ -7,3 +7,4 @@
 /shorturl.db
 /shorturl.db-shm
 /shorturl.db-wal
+/cov.out
