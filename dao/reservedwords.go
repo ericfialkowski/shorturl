@@ -5,9 +5,10 @@ import (
 	"strings"
 )
 
-// this will be for words we don't want to allow (like if there are path fragments we want to use)
 var (
-	reservedWords = map[string]bool{}
+	// this will be for words we don't want to allow (like if there are path fragments we want to use)
+	// make sure to uncomment the check in AcceptableWord in order for it to work
+	//reservedWords = map[string]bool{}
 
 	badWords = map[string]bool{
 		"2g1c":           true,
@@ -691,9 +692,9 @@ var (
 )
 
 func AcceptableWord(s string) bool {
-	if reservedWords[s] {
-		return false
-	}
+	//if reservedWords[s] {
+	//	return false
+	//}
 
 	if badWords[s] {
 		return false
