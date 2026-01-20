@@ -155,6 +155,13 @@ export sqlite_path=":memory:"
 | `OTEL_SERVICE_NAME`          | shorturl                | Service name for telemetry     |
 | `OTEL_METRICS_ENABLED`       | true                    | Enable/disable OTEL metrics    |
 
+**Local Debugging:** To run locally without an OTLP collector, disable metrics to avoid connection errors:
+
+```bash
+export OTEL_METRICS_ENABLED=false
+./shorturl
+```
+
 ## API Endpoints
 
 | Method | Path           | Description                      |
