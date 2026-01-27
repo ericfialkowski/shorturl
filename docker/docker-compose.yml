@@ -146,6 +146,58 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
       OTEL_SERVICE_NAME: shorturl
 
+  # ============== Redis Profile ==============
+  redis:
+    image: redis:7-alpine
+    container_name: shorturldb-redis
+    restart: always
+    profiles: [redis]
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: shorturldb-redis-commander
+    restart: always
+    profiles: [redis]
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "8084:8081"
+    environment:
+      REDIS_HOSTS: local:redis:6379
+
+  short-url-redis:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: short-url
+    hostname: shorturl
+    profiles: [redis]
+    depends_on:
+      redis:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    expose:
+      - "8810"
+    environment:
+      redis_uri: redis://redis:6379/0
+      logrequests: "true"
+      port: 8810
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_SERVICE_NAME: shorturl
+
   # ============== In-Memory Profile ==============
   short-url-memory:
     build:
@@ -179,7 +231,7 @@ services:
     image: otel/opentelemetry-collector:latest
     container_name: otel-collector
     restart: always
-    profiles: [mongo, postgres, mysql, memory]
+    profiles: [mongo, postgres, mysql, redis, memory]
     volumes:
       - ./otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
     ports:
@@ -217,7 +269,18 @@ services:
     ports:
       - "8800:8800"
 
+  nginx-redis:
+    image: nginx:latest
+    container_name: nginx
+    profiles: [redis]
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on: [short-url-redis]
+    ports:
+      - "8800:8800"
+
 volumes:
   postgres_data:
   pgadmin_data:
   mysql_data:
+  redis_data:

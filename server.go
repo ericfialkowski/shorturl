@@ -26,6 +26,7 @@ var (
 	postgresUri = env.StringOrDefault("postgres_uri", "") // postgres://user:password@localhost:5432/shorturl
 	mysqlDsn    = env.StringOrDefault("mysql_dsn", "")    // user:password@tcp(localhost:3306)/shorturl
 	sqlitePath  = env.StringOrDefault("sqlite_path", "")  // ./shorturl.db or :memory:
+	redisUri    = env.StringOrDefault("redis_uri", "")    // redis://user:password@localhost:6379/0 or localhost:6379
 )
 
 func main() {
@@ -57,8 +58,11 @@ func main() {
 	if len(sqlitePath) > 0 {
 		dbOptionsSet++
 	}
+	if len(redisUri) > 0 {
+		dbOptionsSet++
+	}
 	if dbOptionsSet > 1 {
-		log.Fatal("Error: multiple database options set. Please set only one of: POSTGRES_URI, MYSQL_DSN, MONGO_URI, or SQLITE_PATH")
+		log.Fatal("Error: multiple database options set. Please set only one of: POSTGRES_URI, MYSQL_DSN, MONGO_URI, SQLITE_PATH, or REDIS_URI")
 	}
 
 	var db dao.ShortUrlDao
@@ -72,6 +76,9 @@ func main() {
 	case len(mongoUri) > 0:
 		db = dao.CreateMongoDB(mongoUri)
 		log.Println("Using MongoDB database")
+	case len(redisUri) > 0:
+		db = dao.CreateRedisDB(redisUri)
+		log.Println("Using Redis database")
 	case len(sqlitePath) > 0:
 		db = dao.CreateSQLiteDB(sqlitePath)
 		log.Println("Using SQLite database")
