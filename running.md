@@ -18,6 +18,9 @@ docker compose --profile postgres up --build
 # MySQL
 docker compose --profile mysql up --build
 
+# Redis
+docker compose --profile redis up --build
+
 # In-Memory (no persistence)
 docker compose --profile memory up --build
 ```
@@ -33,6 +36,7 @@ Each database profile includes an admin UI:
 | mongo      | http://localhost:8081     | dbadmin / p@ssw0rd!             |
 | postgres   | http://localhost:8082     | (auto-configured)               |
 | mysql      | http://localhost:8083     | (auto-configured)               |
+| redis      | http://localhost:8084     | (none required)                 |
 
 ## Running Locally
 
@@ -92,6 +96,18 @@ export sqlite_path=":memory:"
 ./shorturl
 ```
 
+### Redis
+
+```bash
+# URL format
+export redis_uri="redis://user:password@localhost:6379/0"
+./shorturl
+
+# Simple address format (no auth)
+export redis_uri="localhost:6379"
+./shorturl
+```
+
 ## Environment Variables
 
 ### Server Configuration
@@ -115,6 +131,7 @@ export sqlite_path=":memory:"
 | `postgres_uri` | PostgreSQL connection URI                            |
 | `mysql_dsn`    | MySQL DSN (Data Source Name)                         |
 | `sqlite_path`  | Path to SQLite database file (or `:memory:`)         |
+| `redis_uri`    | Redis connection URI or address                      |
 
 ### Database-Specific Options
 
@@ -139,6 +156,13 @@ export sqlite_path=":memory:"
 | Variable        | Default | Description    |
 |-----------------|---------|----------------|
 | `mongo_timeout` | 10s     | Query timeout  |
+
+#### Redis
+
+| Variable          | Default | Description              |
+|-------------------|---------|--------------------------|
+| `redis_timeout`   | 10s     | Operation timeout        |
+| `redis_pool_size` | 10      | Connection pool size     |
 
 ### URL Abbreviation
 
