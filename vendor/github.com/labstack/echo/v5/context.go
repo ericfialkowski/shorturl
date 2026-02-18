@@ -15,6 +15,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -139,8 +140,8 @@ func (c *Context) Response() http.ResponseWriter {
 	return c.response
 }
 
-// SetResponse sets `*http.ResponseWriter`. Some middleware require that given ResponseWriter implements following
-// method `Unwrap() http.ResponseWriter` which eventually should return echo.Response instance.
+// SetResponse sets `*http.ResponseWriter`. Some context methods and/or middleware require that given ResponseWriter implements following
+// method `Unwrap() http.ResponseWriter` which eventually should return *echo.Response instance.
 func (c *Context) SetResponse(r http.ResponseWriter) {
 	c.response = r
 }
@@ -153,7 +154,8 @@ func (c *Context) IsTLS() bool {
 // IsWebSocket returns true if HTTP connection is WebSocket otherwise false.
 func (c *Context) IsWebSocket() bool {
 	upgrade := c.request.Header.Get(HeaderUpgrade)
-	return strings.EqualFold(upgrade, "websocket")
+	connection := c.request.Header.Get(HeaderConnection)
+	return strings.EqualFold(upgrade, "websocket") && strings.Contains(strings.ToLower(connection), "upgrade")
 }
 
 // Scheme returns the HTTP protocol scheme, `http` or `https`.
@@ -414,6 +416,15 @@ func (c *Context) Render(code int, name string, data any) (err error) {
 	if c.echo.Renderer == nil {
 		return ErrRendererNotRegistered
 	}
+	// as Renderer.Render can fail, and in that case we need to delay sending status code to the client until
+	// (global) error handler decides the correct status code for the error to be sent to the client, so we need to write
+	//  the rendered template to the buffer first.
+	//
+	// html.Template.ExecuteTemplate() documentations writes:
+	// > If an error occurs executing the template or writing its output,
+	// > execution stops, but partial results may already have been written to
+	// > the output writer.
+
 	buf := new(bytes.Buffer)
 	if err = c.echo.Renderer.Render(c, buf, name, data); err != nil {
 		return
@@ -453,7 +464,18 @@ func (c *Context) jsonPBlob(code int, callback string, i any) (err error) {
 
 func (c *Context) json(code int, i any, indent string) error {
 	c.writeContentType(MIMEApplicationJSON)
-	c.response.WriteHeader(code)
+
+	// as JSONSerializer.Serialize can fail, and in that case we need to delay sending status code to the client until
+	// (global) error handler decides correct status code for the error to be sent to the client.
+	// For that we need to use writer that can store the proposed status code until the first Write is called.
+	if r, err := UnwrapResponse(c.response); err == nil {
+		r.Status = code
+	} else {
+		resp := c.Response()
+		c.SetResponse(&delayedStatusWriter{ResponseWriter: resp, status: code})
+		defer c.SetResponse(resp)
+	}
+
 	return c.echo.JSONSerializer.Serialize(c, i, indent)
 }
 
@@ -558,6 +580,7 @@ func (c *Context) FileFS(file string, filesystem fs.FS) error {
 }
 
 func fsFile(c *Context, file string, filesystem fs.FS) error {
+	file = path.Clean(file) // `os.Open` and `os.DirFs.Open()` behave differently, later does not like ``, `.`, `..` at all, but we allowed those now need to clean
 	f, err := filesystem.Open(file)
 	if err != nil {
 		return ErrNotFound

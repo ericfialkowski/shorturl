@@ -15,6 +15,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/labstack/echo/v5"
 )
@@ -156,7 +157,10 @@ func (config StaticConfig) ToMiddleware() (echo.MiddlewareFunc, error) {
 	// Defaults
 	if config.Root == "" {
 		config.Root = "." // For security we want to restrict to CWD.
+	} else {
+		config.Root = path.Clean(config.Root) // fs.Open is very picky about ``, `.`, `..` in paths, so remove some of them up.
 	}
+
 	if config.Skipper == nil {
 		config.Skipper = DefaultStaticConfig.Skipper
 	}
@@ -170,6 +174,19 @@ func (config StaticConfig) ToMiddleware() (echo.MiddlewareFunc, error) {
 	dirListTemplate, tErr := template.New("index").Parse(config.DirectoryListTemplate)
 	if tErr != nil {
 		return nil, fmt.Errorf("echo static middleware directory list template parsing error: %w", tErr)
+	}
+
+	var once *sync.Once
+	var fsErr error
+	currentFS := config.Filesystem
+	if config.Filesystem == nil {
+		once = &sync.Once{}
+	} else if config.Root != "." {
+		tmpFs, fErr := fs.Sub(config.Filesystem, path.Join(".", config.Root))
+		if fErr != nil {
+			return nil, fmt.Errorf("static middleware failed to create sub-filesystem from config.Root, error: %w", fErr)
+		}
+		currentFS = tmpFs
 	}
 
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
@@ -196,23 +213,31 @@ func (config StaticConfig) ToMiddleware() (echo.MiddlewareFunc, error) {
 			// 3. The "/" prefix forces absolute path interpretation, removing ".." components
 			// 4. Backslashes are treated as literal characters (not path separators), preventing traversal
 			// See static_windows.go for Go 1.20+ filepath.Clean compatibility notes
-			name := path.Join(config.Root, path.Clean("/"+p)) // "/"+ for security
+			filePath := path.Clean("./" + p)
 
 			if config.IgnoreBase {
 				routePath := path.Base(strings.TrimRight(c.Path(), "/*"))
 				baseURLPath := path.Base(p)
 				if baseURLPath == routePath {
-					i := strings.LastIndex(name, routePath)
-					name = name[:i] + strings.Replace(name[i:], routePath, "", 1)
+					i := strings.LastIndex(filePath, routePath)
+					filePath = filePath[:i] + strings.Replace(filePath[i:], routePath, "", 1)
 				}
 			}
 
-			currentFS := config.Filesystem
-			if currentFS == nil {
-				currentFS = c.Echo().Filesystem
+			if once != nil {
+				once.Do(func() {
+					if tmp, tmpErr := fs.Sub(c.Echo().Filesystem, config.Root); tmpErr != nil {
+						fsErr = fmt.Errorf("static middleware failed to create sub-filesystem: %w", tmpErr)
+					} else {
+						currentFS = tmp
+					}
+				})
+				if fsErr != nil {
+					return fsErr
+				}
 			}
 
-			file, err := currentFS.Open(name)
+			file, err := currentFS.Open(filePath)
 			if err != nil {
 				if !isIgnorableOpenFileError(err) {
 					return err
@@ -229,7 +254,7 @@ func (config StaticConfig) ToMiddleware() (echo.MiddlewareFunc, error) {
 					return err
 				}
 				// is case HTML5 mode is enabled + echo 404 we serve index to the client
-				file, err = currentFS.Open(path.Join(config.Root, config.Index))
+				file, err = currentFS.Open(config.Index)
 				if err != nil {
 					return err
 				}
@@ -243,10 +268,10 @@ func (config StaticConfig) ToMiddleware() (echo.MiddlewareFunc, error) {
 			}
 
 			if info.IsDir() {
-				index, err := currentFS.Open(path.Join(name, config.Index))
+				index, err := currentFS.Open(path.Join(filePath, config.Index))
 				if err != nil {
 					if config.Browse {
-						return listDir(dirListTemplate, name, currentFS, c.Response())
+						return listDir(dirListTemplate, filePath, currentFS, c.Response())
 					}
 
 					return next(c)
@@ -276,34 +301,36 @@ func serveFile(c *echo.Context, file fs.File, info os.FileInfo) error {
 	return nil
 }
 
-func listDir(t *template.Template, name string, filesystem fs.FS, res http.ResponseWriter) error {
+func listDir(t *template.Template, pathInFs string, filesystem fs.FS, res http.ResponseWriter) error {
+	files, err := fs.ReadDir(filesystem, pathInFs)
+	if err != nil {
+		return fmt.Errorf("static middleware failed to read directory for listing: %w", err)
+	}
+
 	// Create directory index
 	res.Header().Set(echo.HeaderContentType, echo.MIMETextHTMLCharsetUTF8)
 	data := struct {
 		Name  string
 		Files []any
 	}{
-		Name: name,
+		Name: pathInFs,
 	}
-	err := fs.WalkDir(filesystem, ".", func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
+
+	for _, f := range files {
+		var size int64
+		if !f.IsDir() {
+			info, err := f.Info()
+			if err != nil {
+				return fmt.Errorf("static middleware failed to get file info for listing: %w", err)
+			}
+			size = info.Size()
 		}
 
-		info, infoErr := d.Info()
-		if infoErr != nil {
-			return fmt.Errorf("static middleware list dir error when getting file info: %w", infoErr)
-		}
 		data.Files = append(data.Files, struct {
 			Name string
 			Dir  bool
 			Size string
-		}{d.Name(), d.IsDir(), format(info.Size())})
-
-		return nil
-	})
-	if err != nil {
-		return err
+		}{f.Name(), f.IsDir(), format(size)})
 	}
 
 	return t.Execute(res, data)

@@ -1,5 +1,47 @@
 # Changelog
 
+## v5.0.4 - 2026-02-15
+
+**Enhancements**
+
+* Remove unused import 'errors' from README example by @kumapower17 in https://github.com/labstack/echo/pull/2889
+* Fix Graceful shutdown: after `http.Server.Serve` returns we need to wait for graceful shutdown goroutine to finish by @aldas in https://github.com/labstack/echo/pull/2898
+* Update location of oapi-codegen in README by @mromaszewicz in https://github.com/labstack/echo/pull/2896
+* Add Go 1.26 to CI flow by @aldas in https://github.com/labstack/echo/pull/2899
+* Add new function `echo.StatusCode` by @suwakei in https://github.com/labstack/echo/pull/2892
+* CSRF: support older token-based CSRF protection handler that want to render token into template by @aldas in https://github.com/labstack/echo/pull/2894
+* Add `echo.ResolveResponseStatus` function to help middleware/handlers determine HTTP status code and echo.Response by @aldas in https://github.com/labstack/echo/pull/2900
+
+
+## v5.0.3 - 2026-02-06
+
+**Security**
+
+* Fix directory traversal vulnerability under Windows in Static middleware when default Echo filesystem is used. Reported by @shblue21.
+
+This applies to cases when:
+- Windows is used as OS
+- `middleware.StaticConfig.Filesystem` is `nil` (default)
+- `echo.Filesystem` is has not been set explicitly (default)
+
+Exposure is restricted to the active process working directory and its subfolders.
+
+
+## v5.0.2 - 2026-02-02
+
+**Security**
+
+* Fix Static middleware with `config.Browse=true` lists all files/subfolders from `config.Filesystem` root and not starting from `config.Root` in https://github.com/labstack/echo/pull/2887
+
+
+## v5.0.1 - 2026-01-28
+
+* Panic MW: will now return a custom PanicStackError with stack trace by @aldas in https://github.com/labstack/echo/pull/2871
+* Docs: add missing err parameter to DenyHandler example by @cgalibern in https://github.com/labstack/echo/pull/2878
+* improve: improve websocket checks in IsWebSocket() [per RFC 6455] by @raju-mechatronics in https://github.com/labstack/echo/pull/2875
+* fix: Context.Json() should not send status code before serialization is complete by @aldas in https://github.com/labstack/echo/pull/2877
+
+
 ## v5.0.0 - 2026-01-18
 
 Echo `v5` is maintenance release with **major breaking changes**
