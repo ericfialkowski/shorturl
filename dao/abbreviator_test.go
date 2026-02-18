@@ -50,7 +50,7 @@ func TestCreateAbbreviation_AvoidsCollision(t *testing.T) {
 	defer dao.Cleanup()
 
 	// Save several URLs first
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		abv, err := CreateAbbreviation("https://test"+string(rune('a'+i))+".com", dao)
 		if err != nil {
 			t.Fatalf("CreateAbbreviation() error = %v", err)
@@ -76,7 +76,7 @@ func TestCreateAbbreviation_ReturnsAcceptableWords(t *testing.T) {
 	defer dao.Cleanup()
 
 	// Generate many abbreviations and verify they're all acceptable
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		abv, err := CreateAbbreviation("https://test"+string(rune(i))+".com", dao)
 		if err != nil {
 			t.Fatalf("CreateAbbreviation() error = %v", err)

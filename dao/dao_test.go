@@ -192,7 +192,7 @@ func TestSQLiteDB_HitTracking(t *testing.T) {
 	_ = dao.Save("hit1", "https://hittrack.com")
 
 	// Access the URL multiple times
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		_, _ = dao.GetUrl("hit1")
 	}
 

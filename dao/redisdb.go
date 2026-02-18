@@ -84,7 +84,7 @@ func (d *RedisDB) Save(abv string, url string) error {
 
 	// Use a transaction to ensure atomicity
 	pipe := d.client.TxPipeline()
-	pipe.HSet(ctx, abvKey, map[string]interface{}{
+	pipe.HSet(ctx, abvKey, map[string]any{
 		"url":  url,
 		"hits": 0,
 	})

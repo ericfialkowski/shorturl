@@ -31,7 +31,7 @@ func TestRandStrn_ValidCharacters(t *testing.T) {
 	validChars := "abcdefghijklmnopqrstuvwxyz0123456789"
 
 	// Generate multiple strings to test
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		result := RandStrn(20)
 		for _, char := range result {
 			if !strings.ContainsRune(validChars, char) {
@@ -44,7 +44,7 @@ func TestRandStrn_ValidCharacters(t *testing.T) {
 func TestRandStrn_Randomness(t *testing.T) {
 	// Generate multiple strings and ensure they're not all the same
 	results := make(map[string]bool)
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		results[RandStrn(10)] = true
 	}
 
@@ -55,7 +55,7 @@ func TestRandStrn_Randomness(t *testing.T) {
 }
 
 func TestRandStrn_NoUppercase(t *testing.T) {
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		result := RandStrn(20)
 		if result != strings.ToLower(result) {
 			t.Errorf("RandStrn() returned uppercase characters: %s", result)
