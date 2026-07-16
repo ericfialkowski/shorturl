@@ -7,11 +7,13 @@ import (
 	"encoding"
 	"encoding/xml"
 	"errors"
+	"fmt"
 	"mime/multipart"
 	"net/http"
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -123,16 +125,83 @@ func (b *DefaultBinder) Bind(c *Context, target any) error {
 	if err := BindPathValues(c, target); err != nil {
 		return err
 	}
-	// Only bind query parameters for GET/DELETE/HEAD to avoid unexpected behavior with destination struct binding from body.
+	// Only bind query parameters for GET/DELETE/HEAD/QUERY to avoid unexpected behavior with destination struct binding from body.
 	// For example a request URL `&id=1&lang=en` with body `{"id":100,"lang":"de"}` would lead to precedence issues.
 	// The HTTP method check restores pre-v4.1.11 behavior to avoid these problems (see issue #1670)
 	method := c.Request().Method
-	if method == http.MethodGet || method == http.MethodDelete || method == http.MethodHead {
+	if method == http.MethodGet || method == http.MethodDelete || method == http.MethodHead || method == QUERY {
 		if err := BindQueryParams(c, target); err != nil {
 			return err
 		}
 	}
 	return BindBody(c, target)
+}
+
+// bindFieldMeta is the cached, type-level reflection metadata for a single struct field. Reading struct
+// tags (reflect.StructTag.Get) parses the tag string on every call, so for binding-heavy endpoints we
+// compute it once per struct type and reuse it across requests (see bindStructMeta). Only type-level data
+// is cached here; per-request, per-instance reflect.Value operations still happen in bindData.
+type bindFieldMeta struct {
+	index int // field index within the struct
+	// fieldKind is the DECLARED field kind (typeField.Type.Kind()), used only for unmarshal dispatch.
+	// It is intentionally not the post-anonymous-pointer-deref live kind; bindData computes that
+	// separately as structFieldKind where needed.
+	fieldKind reflect.Kind
+	anonymous bool   // reflect.StructField.Anonymous
+	formatTag string // value of the `format` struct tag
+	// binding-source tag values. bindData is only ever called with one of these four tags (see the
+	// callers BindPathValues/BindQueryParams/BindBody/BindHeaders). Keep these fields, the four
+	// f.Tag.Get(...) lines in bindMetaFor, and the tagName switch in sync if a source is ever added.
+	param, query, form, header string
+}
+
+// tagName returns the field's tag value for the given binding source tag.
+// Keep in sync with the tag fields above and the f.Tag.Get calls in bindMetaFor.
+func (m *bindFieldMeta) tagName(tag string) string {
+	switch tag {
+	case "param":
+		return m.param
+	case "query":
+		return m.query
+	case "form":
+		return m.form
+	case "header":
+		return m.header
+	default:
+		return ""
+	}
+}
+
+// bindStructMeta is the cached field metadata for a whole struct type, in declaration order.
+type bindStructMeta struct {
+	fields []bindFieldMeta
+}
+
+// bindStructCache memoizes bindStructMeta keyed by struct reflect.Type. Concurrent double-computation is
+// harmless because the result is deterministic and idempotent.
+var bindStructCache sync.Map // map[reflect.Type]*bindStructMeta
+
+func bindMetaFor(typ reflect.Type) *bindStructMeta {
+	if cached, ok := bindStructCache.Load(typ); ok {
+		return cached.(*bindStructMeta)
+	}
+	n := typ.NumField()
+	meta := &bindStructMeta{fields: make([]bindFieldMeta, n)}
+	for i := 0; i < n; i++ {
+		f := typ.Field(i)
+		meta.fields[i] = bindFieldMeta{
+			index:     i,
+			anonymous: f.Anonymous,
+			fieldKind: f.Type.Kind(),
+			formatTag: f.Tag.Get("format"),
+			param:     f.Tag.Get("param"),
+			query:     f.Tag.Get("query"),
+			form:      f.Tag.Get("form"),
+			header:    f.Tag.Get("header"),
+		}
+	}
+	bindStructCache.Store(typ, meta)
+	return meta
 }
 
 // bindData will bind data ONLY fields in destination struct that have EXPLICIT tag
@@ -155,7 +224,7 @@ func bindData(destination any, data map[string][]string, tag string, dataFiles m
 		isElemInterface := k == reflect.Interface
 		isElemString := k == reflect.String
 		isElemSliceOfStrings := k == reflect.Slice && typ.Elem().Elem().Kind() == reflect.String
-		if !(isElemSliceOfStrings || isElemString || isElemInterface) {
+		if !isElemSliceOfStrings && !isElemString && !isElemInterface {
 			return nil
 		}
 		if val.IsNil() {
@@ -184,11 +253,12 @@ func bindData(destination any, data map[string][]string, tag string, dataFiles m
 		return errors.New("binding element must be a struct")
 	}
 
-	for i := 0; i < typ.NumField(); i++ { // iterate over all destination fields
-		typeField := typ.Field(i)
-		structField := val.Field(i)
-		if typeField.Anonymous {
-			if structField.Kind() == reflect.Ptr {
+	meta := bindMetaFor(typ)
+	for fi := range meta.fields { // iterate over all destination fields
+		fm := &meta.fields[fi]
+		structField := val.Field(fm.index)
+		if fm.anonymous {
+			if structField.Kind() == reflect.Pointer {
 				structField = structField.Elem()
 			}
 		}
@@ -196,8 +266,8 @@ func bindData(destination any, data map[string][]string, tag string, dataFiles m
 			continue
 		}
 		structFieldKind := structField.Kind()
-		inputFieldName := typeField.Tag.Get(tag)
-		if typeField.Anonymous && structFieldKind == reflect.Struct && inputFieldName != "" {
+		inputFieldName := fm.tagName(tag)
+		if fm.anonymous && structFieldKind == reflect.Struct && inputFieldName != "" {
 			// if anonymous struct with query/param/form tags, report an error
 			return errors.New("query/param/form tags are not allowed with anonymous struct field")
 		}
@@ -247,17 +317,16 @@ func bindData(destination any, data map[string][]string, tag string, dataFiles m
 		// but it is smart enough to handle niche cases like `*int`,`*[]string`,`[]*int` .
 
 		// try unmarshalling first, in case we're dealing with an alias to an array type
-		if ok, err := unmarshalInputsToField(typeField.Type.Kind(), inputValue, structField); ok {
+		if ok, err := unmarshalInputsToField(fm.fieldKind, inputValue, structField); ok {
 			if err != nil {
-				return err
+				return fmt.Errorf("%s: %w", inputFieldName, err)
 			}
 			continue
 		}
 
-		formatTag := typeField.Tag.Get("format")
-		if ok, err := unmarshalInputToField(typeField.Type.Kind(), inputValue[0], structField, formatTag); ok {
+		if ok, err := unmarshalInputToField(fm.fieldKind, inputValue[0], structField, fm.formatTag); ok {
 			if err != nil {
-				return err
+				return fmt.Errorf("%s: %w", inputFieldName, err)
 			}
 			continue
 		}
@@ -273,9 +342,9 @@ func bindData(destination any, data map[string][]string, tag string, dataFiles m
 			sliceOf := structField.Type().Elem().Kind()
 			numElems := len(inputValue)
 			slice := reflect.MakeSlice(structField.Type(), numElems, numElems)
-			for j := 0; j < numElems; j++ {
+			for j := range numElems {
 				if err := setWithProperType(sliceOf, inputValue[j], slice.Index(j)); err != nil {
-					return err
+					return fmt.Errorf("%s: %w", inputFieldName, err)
 				}
 			}
 			structField.Set(slice)
@@ -283,7 +352,7 @@ func bindData(destination any, data map[string][]string, tag string, dataFiles m
 		}
 
 		if err := setWithProperType(structFieldKind, inputValue[0], structField); err != nil {
-			return err
+			return fmt.Errorf("%s: %w", inputFieldName, err)
 		}
 	}
 	return nil
@@ -297,7 +366,7 @@ func setWithProperType(valueKind reflect.Kind, val string, structField reflect.V
 	}
 
 	switch valueKind {
-	case reflect.Ptr:
+	case reflect.Pointer:
 		return setWithProperType(structField.Elem().Kind(), val, structField.Elem())
 	case reflect.Int:
 		return setIntField(val, 0, structField)
@@ -334,7 +403,7 @@ func setWithProperType(valueKind reflect.Kind, val string, structField reflect.V
 }
 
 func unmarshalInputsToField(valueKind reflect.Kind, values []string, field reflect.Value) (bool, error) {
-	if valueKind == reflect.Ptr {
+	if valueKind == reflect.Pointer {
 		if field.IsNil() {
 			field.Set(reflect.New(field.Type().Elem()))
 		}
@@ -350,7 +419,7 @@ func unmarshalInputsToField(valueKind reflect.Kind, values []string, field refle
 }
 
 func unmarshalInputToField(valueKind reflect.Kind, val string, field reflect.Value, formatTag string) (bool, error) {
-	if valueKind == reflect.Ptr {
+	if valueKind == reflect.Pointer {
 		if field.IsNil() {
 			field.Set(reflect.New(field.Type().Elem()))
 		}

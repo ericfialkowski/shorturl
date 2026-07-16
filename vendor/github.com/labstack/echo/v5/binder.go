@@ -66,6 +66,9 @@ import (
 */
 
 // BindingError represents an error that occurred while binding request data.
+//
+// Note: JSON serialization is handled by the MarshalJSON method below, not by the
+// struct tags (which are kept for documentation). MarshalJSON emits {"field","message"}.
 type BindingError struct {
 	// Field is the field name where value binding failed
 	Field string `json:"field"`
@@ -86,6 +89,24 @@ func NewBindingError(sourceParam string, values []string, message string, err er
 // Error returns error message
 func (be *BindingError) Error() string {
 	return fmt.Sprintf("%s, field=%s", be.HTTPError.Error(), be.Field)
+}
+
+// MarshalJSON implements json.Marshaler so that binding errors are serialized into
+// a structured response (e.g. {"field":"id","message":"..."}) rather than being
+// flattened to a generic message. DefaultHTTPErrorHandler routes errors that
+// implement json.Marshaler through their own encoding.
+func (be *BindingError) MarshalJSON() ([]byte, error) {
+	message := be.Message
+	if message == "" {
+		message = http.StatusText(be.Code)
+	}
+	return json.Marshal(struct {
+		Field   string `json:"field"`
+		Message string `json:"message"`
+	}{
+		Field:   be.Field,
+		Message: message,
+	})
 }
 
 // ValueBinder provides utility methods for binding query or path parameter to various Go built-in types
@@ -1239,7 +1260,7 @@ func (b *ValueBinder) UnixTime(sourceParam string, dest *time.Time) *ValueBinder
 	return b.unixTime(sourceParam, dest, false, time.Second)
 }
 
-// MustUnixTime requires parameter value to exist to bind to time.Duration variable (in local time corresponding
+// MustUnixTime requires parameter value to exist to bind to time.Time variable (in local time corresponding
 // to the given Unix time). Returns error when value does not exist.
 //
 // Example: 1609180603 bind to 2020-12-28T18:36:43.000000000+00:00
@@ -1260,7 +1281,7 @@ func (b *ValueBinder) UnixTimeMilli(sourceParam string, dest *time.Time) *ValueB
 	return b.unixTime(sourceParam, dest, false, time.Millisecond)
 }
 
-// MustUnixTimeMilli requires parameter value to exist to bind to time.Duration variable  (in local time corresponding
+// MustUnixTimeMilli requires parameter value to exist to bind to time.Time variable (in local time corresponding
 // to the given Unix time in millisecond precision). Returns error when value does not exist.
 //
 // Example: 1647184410140 bind to 2022-03-13T15:13:30.140000000+00:00
@@ -1284,8 +1305,8 @@ func (b *ValueBinder) UnixTimeNano(sourceParam string, dest *time.Time) *ValueBi
 	return b.unixTime(sourceParam, dest, false, time.Nanosecond)
 }
 
-// MustUnixTimeNano requires parameter value to exist to bind to time.Duration variable  (in local Time corresponding
-// to the given Unix time value in nano second precision). Returns error when value does not exist.
+// MustUnixTimeNano requires parameter value to exist to bind to time.Time variable (in local time corresponding
+// to the given Unix time value in nanosecond precision). Returns error when value does not exist.
 //
 // Example: 1609180603123456789 binds to 2020-12-28T18:36:43.123456789+00:00
 // Example:          1000000000 binds to 1970-01-01T00:00:01.000000000+00:00

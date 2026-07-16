@@ -69,16 +69,58 @@ type DefaultRouter struct {
 	allowOverwritingRoute    bool
 	unescapePathParamValues  bool
 	useEscapedPathForRouting bool
+	autoHandleHEAD           bool
 }
 
 // RouterConfig is configuration options for (default) router
 type RouterConfig struct {
-	NotFoundHandler           HandlerFunc
-	MethodNotAllowedHandler   HandlerFunc
-	OptionsMethodHandler      HandlerFunc
-	AllowOverwritingRoute     bool
-	UnescapePathParamValues   bool
+	// NotFoundHandler is a handler that is executed when no route matches the request.
+	NotFoundHandler HandlerFunc
+
+	// MethodNotAllowedHandler is a handler that is executed when no route with exact METHOD matches the request but
+	// there is a route with same path but different method.
+	MethodNotAllowedHandler HandlerFunc
+
+	// OptionsMethodHandler is a handler that is executed when an OPTIONS request is made.
+	OptionsMethodHandler HandlerFunc
+
+	// AllowOverwritingRoute allows overwriting existing routes. If false, then adding a route with the same method
+	// and path will return an error.
+	AllowOverwritingRoute bool
+
+	// UnescapePathParamValues forces router to unescape path parameter values before setting them in context.
+	UnescapePathParamValues bool
+
+	// UseEscapedPathForMatching forces router to use an escaped path (req.URL.RawPath instead of req.URL.Path) for matching.
+	// Difference between URL.RawPath and URL.Path is:
+	//  * URL.Path is where request path is stored. Value is stored in decoded form: /%47%6f%2f becomes /Go/.
+	//  * URL.RawPath is an optional field which only gets set if the default encoding is different from Path.
 	UseEscapedPathForMatching bool
+
+	// AutoHandleHEAD enables automatic handling of HTTP HEAD requests by
+	// falling back to the corresponding GET route.
+	//
+	// When enabled, a HEAD request will match the same handler as GET for
+	// the route, but the response body is suppressed in accordance with
+	// HTTP semantics. Headers (e.g., Content-Length, Content-Type) are
+	// preserved as if a GET request was made.
+	//
+	// Security considerations: the GET handler is fully executed for every
+	// HEAD request, including all side effects:
+	//   - State-mutating operations (DB writes, audit logs, counters) run.
+	//   - Rate-limiting middleware consumes quota, enabling low-cost exhaustion.
+	//   - Expensive computations run with no response body returned to the
+	//     caller, making HEAD cheaper to abuse for DoS than GET.
+	//   - All GET routes become enumerable via HEAD probing (200 = route
+	//     exists, 405 = route absent).
+	//
+	// If route confidentiality/state-mutation is a concern, leave AutoHandleHEAD disabled
+	// and register explicit HEAD handlers only for routes that are safe to
+	// expose (e.g. e.HEAD("/public", handler)).
+	// You can leverage Echo.OnAddRoute callback to add HEAD routes explicitly from a single place.
+	//
+	// Disabled by default.
+	AutoHandleHEAD bool
 }
 
 // NewRouter returns a new Router instance.
@@ -98,6 +140,7 @@ func NewRouter(config RouterConfig) *DefaultRouter {
 		notFoundHandler:         notFoundHandler,
 		methodNotAllowedHandler: methodNotAllowedHandler,
 		optionsMethodHandler:    optionsMethodHandler,
+		autoHandleHEAD:          config.AutoHandleHEAD,
 	}
 	if config.NotFoundHandler != nil {
 		r.notFoundHandler = config.NotFoundHandler
@@ -121,11 +164,15 @@ type node struct {
 	prefix         string
 	originalPath   string
 	staticChildren children
-	paramsCount    int
-	kind           kind
-	label          byte
-	isLeaf         bool
-	isHandler      bool
+	// scLabels holds the first byte (label) of each staticChildren entry in the
+	// same order. Scanning this contiguous byte slice during routing is more
+	// cache-friendly than dereferencing each *node to read its label.
+	scLabels    []byte
+	paramsCount int
+	kind        kind
+	label       byte
+	isLeaf      bool
+	isHandler   bool
 }
 
 type kind uint8
@@ -141,8 +188,9 @@ const (
 
 type routeMethod struct {
 	*RouteInfo
-	handler      HandlerFunc
-	orgRouteInfo RouteInfo
+	handler            HandlerFunc
+	wrappedHeadHandler HandlerFunc // non-nil only for GET routes when autoHandleHEAD=true
+	orgRouteInfo       RouteInfo
 }
 
 type routeMethods struct {
@@ -157,6 +205,7 @@ type routeMethods struct {
 	put      *routeMethod
 	trace    *routeMethod
 	report   *routeMethod
+	query    *routeMethod
 	any      *routeMethod
 	anyOther map[string]*routeMethod
 
@@ -192,6 +241,8 @@ func (m *routeMethods) set(method string, r *routeMethod) {
 		m.trace = r
 	case REPORT:
 		m.report = r
+	case QUERY:
+		m.query = r
 	case RouteAny:
 		m.any = r
 	case RouteNotFound:
@@ -210,7 +261,7 @@ func (m *routeMethods) set(method string, r *routeMethod) {
 	m.updateAllowHeader()
 }
 
-func (m *routeMethods) find(method string, fallbackToAny bool) *routeMethod {
+func (m *routeMethods) find(method string, fallbackToAny bool, autoHandleHEAD bool) *routeMethod {
 	var r *routeMethod
 	switch method {
 	case http.MethodConnect:
@@ -221,6 +272,9 @@ func (m *routeMethods) find(method string, fallbackToAny bool) *routeMethod {
 		r = m.get
 	case http.MethodHead:
 		r = m.head
+		if autoHandleHEAD && r == nil {
+			r = m.get
+		}
 	case http.MethodOptions:
 		r = m.options
 	case http.MethodPatch:
@@ -235,6 +289,8 @@ func (m *routeMethods) find(method string, fallbackToAny bool) *routeMethod {
 		r = m.trace
 	case REPORT:
 		r = m.report
+	case QUERY:
+		r = m.query
 	case RouteAny:
 		r = m.any
 	case RouteNotFound:
@@ -291,6 +347,9 @@ func (m *routeMethods) updateAllowHeader() {
 	if hasAnyMethod || m.report != nil {
 		buf.WriteString(", REPORT")
 	}
+	if hasAnyMethod || m.query != nil {
+		buf.WriteString(", QUERY")
+	}
 	for method := range m.anyOther { // for simplicity, we use map and therefore order is not deterministic here
 		buf.WriteString(", ")
 		buf.WriteString(method)
@@ -310,6 +369,7 @@ func (m *routeMethods) isHandler() bool {
 		m.propfind != nil ||
 		m.trace != nil ||
 		m.report != nil ||
+		m.query != nil ||
 		m.any != nil ||
 		len(m.anyOther) != 0
 	// RouteNotFound/404 is not considered as a handler
@@ -374,7 +434,7 @@ func (r *DefaultRouter) Remove(method string, path string) error {
 		return errors.New("could not find route to remove by given path")
 	}
 
-	if mh := nodeToRemove.methods.find(method, false); mh == nil {
+	if mh := nodeToRemove.methods.find(method, false, false); mh == nil {
 		return errors.New("could not find route to remove by given path and method")
 	}
 	nodeToRemove.setHandler(method, nil)
@@ -406,13 +466,14 @@ func (r *DefaultRouter) Remove(method string, path string) error {
 					}
 				}
 				parent.staticChildren = append(parent.staticChildren[:index], parent.staticChildren[index+1:]...)
+				parent.scLabels = append(parent.scLabels[:index], parent.scLabels[index+1:]...)
 			case paramKind:
 				parent.paramChild = nil
 			case anyKind:
 				parent.anyChild = nil
 			}
 
-			parent.isLeaf = parent.anyChild == nil && parent.paramChild == nil && len(parent.staticChildren) == 0
+			parent.refreshLeaf()
 			if !parent.isLeaf || parent.isHandler {
 				break
 			}
@@ -446,8 +507,16 @@ func newAddRouteError(route Route, err error) *AddRouteError {
 // Add registers a new route for method and path with matching handler.
 func (r *DefaultRouter) Add(route Route) (RouteInfo, error) {
 	if route.Handler == nil {
-		return RouteInfo{}, newAddRouteError(route, errors.New("adding route without handler function"))
+		switch route.Method {
+		case RouteNotFound:
+			route.Handler = r.notFoundHandler
+		case http.MethodOptions:
+			route.Handler = r.optionsMethodHandler
+		default:
+			return RouteInfo{}, newAddRouteError(route, errors.New("adding route without handler function"))
+		}
 	}
+
 	method := route.Method
 	path := normalizePathSlash(route.Path)
 
@@ -458,6 +527,10 @@ func (r *DefaultRouter) Add(route Route) (RouteInfo, error) {
 				return RouteInfo{}, newAddRouteError(route, errors.New("adding duplicate route (same method+path) is not allowed"))
 			}
 		}
+	}
+	var headH HandlerFunc
+	if r.autoHandleHEAD && method == http.MethodGet {
+		headH = wrapHeadHandler(h)
 	}
 
 	paramNames := make([]string, 0)
@@ -486,9 +559,10 @@ func (r *DefaultRouter) Add(route Route) (RouteInfo, error) {
 				// path node is last fragment of route path. ie. `/users/:id`
 				ri = route.ToRouteInfo(paramNames)
 				rm := routeMethod{
-					RouteInfo:    &RouteInfo{Method: method, Path: originalPath, Parameters: paramNames, Name: route.Name},
-					handler:      h,
-					orgRouteInfo: ri,
+					RouteInfo:          &RouteInfo{Method: method, Path: originalPath, Parameters: paramNames, Name: route.Name},
+					handler:            h,
+					orgRouteInfo:       ri,
+					wrappedHeadHandler: headH,
 				}
 				r.insert(paramKind, path[:i], method, rm)
 				wasAdded = true
@@ -501,9 +575,10 @@ func (r *DefaultRouter) Add(route Route) (RouteInfo, error) {
 			paramNames = append(paramNames, "*")
 			ri = route.ToRouteInfo(paramNames)
 			rm := routeMethod{
-				RouteInfo:    &RouteInfo{Method: method, Path: originalPath, Parameters: paramNames, Name: route.Name},
-				handler:      h,
-				orgRouteInfo: ri,
+				RouteInfo:          &RouteInfo{Method: method, Path: originalPath, Parameters: paramNames, Name: route.Name},
+				handler:            h,
+				orgRouteInfo:       ri,
+				wrappedHeadHandler: headH,
 			}
 			r.insert(anyKind, path[:i+1], method, rm)
 			wasAdded = true
@@ -514,9 +589,10 @@ func (r *DefaultRouter) Add(route Route) (RouteInfo, error) {
 	if !wasAdded {
 		ri = route.ToRouteInfo(paramNames)
 		rm := routeMethod{
-			RouteInfo:    &RouteInfo{Method: method, Path: originalPath, Parameters: paramNames, Name: route.Name},
-			handler:      h,
-			orgRouteInfo: ri,
+			RouteInfo:          &RouteInfo{Method: method, Path: originalPath, Parameters: paramNames, Name: route.Name},
+			handler:            h,
+			orgRouteInfo:       ri,
+			wrappedHeadHandler: headH,
 		}
 		r.insert(staticKind, path, method, rm)
 	}
@@ -558,10 +634,7 @@ func (r *DefaultRouter) insert(t kind, path string, method string, ri routeMetho
 		lcpLen := 0
 
 		// LCP - Longest Common Prefix (https://en.wikipedia.org/wiki/LCP_array)
-		maxL := prefixLen
-		if searchLen < maxL {
-			maxL = searchLen
-		}
+		maxL := min(searchLen, prefixLen)
 		for ; lcpLen < maxL && search[lcpLen] == currentNode.prefix[lcpLen]; lcpLen++ {
 		}
 
@@ -575,7 +648,7 @@ func (r *DefaultRouter) insert(t kind, path string, method string, ri routeMetho
 				currentNode.paramsCount = len(ri.Parameters)
 				currentNode.originalPath = ri.Path
 			}
-			currentNode.isLeaf = currentNode.staticChildren == nil && currentNode.paramChild == nil && currentNode.anyChild == nil
+			currentNode.refreshLeaf()
 		} else if lcpLen < prefixLen {
 			// Split node into two before we insert new node.
 			// This happens when we are inserting path that is submatch of any existing inserted paths.
@@ -610,6 +683,7 @@ func (r *DefaultRouter) insert(t kind, path string, method string, ri routeMetho
 			currentNode.label = currentNode.prefix[0]
 			currentNode.prefix = currentNode.prefix[:lcpLen]
 			currentNode.staticChildren = nil
+			currentNode.scLabels = nil
 			currentNode.methods = new(routeMethods)
 			currentNode.originalPath = ""
 			currentNode.paramsCount = 0
@@ -639,7 +713,7 @@ func (r *DefaultRouter) insert(t kind, path string, method string, ri routeMetho
 				// Only Static children could reach here
 				currentNode.addStaticChild(n)
 			}
-			currentNode.isLeaf = currentNode.staticChildren == nil && currentNode.paramChild == nil && currentNode.anyChild == nil
+			currentNode.refreshLeaf()
 		} else if lcpLen < searchLen {
 			search = search[lcpLen:]
 			c := currentNode.findChildWithLabel(search[0])
@@ -662,7 +736,7 @@ func (r *DefaultRouter) insert(t kind, path string, method string, ri routeMetho
 			case anyKind:
 				currentNode.anyChild = n
 			}
-			currentNode.isLeaf = currentNode.staticChildren == nil && currentNode.paramChild == nil && currentNode.anyChild == nil
+			currentNode.refreshLeaf()
 		} else {
 			// Node already exists
 			if ri.handler != nil {
@@ -686,30 +760,49 @@ func newNode(
 	paramChildren,
 	anyChildren *node,
 ) *node {
+	var scLabels []byte
+	if len(sc) > 0 {
+		scLabels = make([]byte, len(sc))
+		for i, c := range sc {
+			scLabels[i] = c.label
+		}
+	}
 	return &node{
 		kind:           t,
 		label:          pre[0],
 		prefix:         pre,
 		parent:         p,
 		staticChildren: sc,
+		scLabels:       scLabels,
 		originalPath:   ppath,
 		paramsCount:    paramsCount,
 		methods:        mh,
 		paramChild:     paramChildren,
 		anyChild:       anyChildren,
-		isLeaf:         sc == nil && paramChildren == nil && anyChildren == nil,
-		isHandler:      mh.isHandler(),
+		// len() (not == nil) so an empty-but-non-nil sc — e.g. a slice from a
+		// prior Remove that was spliced down to length 0 — is still treated as
+		// no children, matching refreshLeaf.
+		isLeaf:    len(sc) == 0 && paramChildren == nil && anyChildren == nil,
+		isHandler: mh.isHandler(),
 	}
+}
+
+// refreshLeaf recomputes whether the node is a leaf (has no children of any
+// kind). len() is used for staticChildren so it stays correct whether the slice
+// is nil or an emptied-but-non-nil slice left behind after a removal.
+func (n *node) refreshLeaf() {
+	n.isLeaf = len(n.staticChildren) == 0 && n.paramChild == nil && n.anyChild == nil
 }
 
 func (n *node) addStaticChild(c *node) {
 	n.staticChildren = append(n.staticChildren, c)
+	n.scLabels = append(n.scLabels, c.label)
 }
 
 func (n *node) findStaticChild(l byte) *node {
-	for _, c := range n.staticChildren {
-		if c.label == l {
-			return c
+	for i, cl := range n.scLabels {
+		if cl == l {
+			return n.staticChildren[i]
 		}
 	}
 	return nil
@@ -867,10 +960,7 @@ func (r *DefaultRouter) Route(c *Context) HandlerFunc {
 			prefixLen = len(currentNode.prefix)
 
 			// LCP - Longest Common Prefix (https://en.wikipedia.org/wiki/LCP_array)
-			lMax := prefixLen
-			if searchLen < lMax {
-				lMax = searchLen
-			}
+			lMax := min(searchLen, prefixLen)
 			for ; lcpLen < lMax && search[lcpLen] == currentNode.prefix[lcpLen]; lcpLen++ {
 			}
 		}
@@ -904,7 +994,7 @@ func (r *DefaultRouter) Route(c *Context) HandlerFunc {
 				if previousBestMatchNode == nil {
 					previousBestMatchNode = currentNode
 				}
-				if h := currentNode.methods.find(req.Method, true); h != nil {
+				if h := currentNode.methods.find(req.Method, true, r.autoHandleHEAD); h != nil {
 					matchedRouteMethod = h
 					break
 				}
@@ -955,7 +1045,7 @@ func (r *DefaultRouter) Route(c *Context) HandlerFunc {
 			searchIndex += len(search)
 			search = ""
 
-			if rMethod := currentNode.methods.find(req.Method, true); rMethod != nil {
+			if rMethod := currentNode.methods.find(req.Method, true, r.autoHandleHEAD); rMethod != nil {
 				matchedRouteMethod = rMethod
 				break
 			}
@@ -995,7 +1085,12 @@ func (r *DefaultRouter) Route(c *Context) HandlerFunc {
 	var rInfo *RouteInfo
 	if matchedRouteMethod != nil {
 		rHandler = matchedRouteMethod.handler
-		rPath = matchedRouteMethod.RouteInfo.Path
+		if req.Method == http.MethodHead && matchedRouteMethod.wrappedHeadHandler != nil {
+			rHandler = matchedRouteMethod.wrappedHeadHandler
+			// we are not touching rInfo.Method and let it be value from GET routeInfo
+		}
+
+		rPath = matchedRouteMethod.Path
 		rInfo = matchedRouteMethod.RouteInfo
 	} else {
 		// use previous match as basis. although we have no matching handler we have path match.

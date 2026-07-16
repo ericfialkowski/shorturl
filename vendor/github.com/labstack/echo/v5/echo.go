@@ -53,6 +53,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -96,10 +97,24 @@ type Echo struct {
 	// middleware are middlewares that are called after routing is done and before handler is called
 	middleware []MiddlewareFunc
 
+	// chain is the global middleware chain (e.middleware) compiled once and reused for every request.
+	// It terminates in a dispatcher that invokes the route handler stored on the Context during routing.
+	// Rebuilt by Use(). See buildRouterChains.
+	chain HandlerFunc
+	// preChain is the pre-middleware chain (e.premiddleware) compiled once. It performs routing and then
+	// invokes chain. Rebuilt by Pre()/Use(). Only used when premiddleware is registered.
+	preChain HandlerFunc
+
 	contextPathParamAllocSize atomic.Int32
 
 	// formParseMaxMemory is passed to Context for multipart form parsing (See http.Request.ParseMultipartForm)
 	formParseMaxMemory int64
+
+	// noGroupAutoRegisterRoutes is a flag that indicates whether echo.Group should NOT register 404 routes automatically
+	// when there are middlewares registered with the group.
+	noGroupAutoRegisterRoutes bool
+
+	enablePathUnescapingStaticFiles bool
 }
 
 // JSONSerializer is the interface that encodes and decodes JSON to and from interfaces.
@@ -159,6 +174,9 @@ const (
 	PROPFIND = "PROPFIND"
 	// REPORT Method can be used to get information about a resource, see rfc 3253
 	REPORT = "REPORT"
+	// QUERY Method is a safe, idempotent request method carrying request content (a query) in its body, see rfc 10008.
+	// It is not (yet) part of the `net/http` standard library, so Echo defines it here.
+	QUERY = "QUERY"
 	// RouteNotFound is special method type for routes handling "route not found" (404) cases
 	RouteNotFound = "echo_route_not_found"
 	// RouteAny is special method type that matches any HTTP method in request. Any has lower
@@ -288,6 +306,37 @@ type Config struct {
 	// FormParseMaxMemory is default value for memory limit that is used
 	// when parsing multipart forms (See (*http.Request).ParseMultipartForm)
 	FormParseMaxMemory int64
+
+	// EnablePathUnescapingStaticFiles enables path parameter (param: *) unescaping for static file methods.
+	// Default false (safe): encoded slashes (%2f) in the wildcard param are NOT decoded,
+	// preventing ACL bypass where /admin%2fprivate.txt bypasses a /admin/* route guard by
+	// not matching that route but having its wildcard param decoded to admin/private.txt.
+	// Set to true only when serving files whose names contain URL-encoded characters
+	// (e.g. "hello world.txt" via /hello%20world.txt) and you are not relying on
+	// route-based ACL guards to restrict access.
+	// If you are enabling this option, make sure you understand the security implications.
+	// See: https://github.com/labstack/echo/security/advisories/GHSA-vfp3-v2gw-7wfq
+	//
+	// Enabling RouterConfig.UseEscapedPathForMatching makes this field irrelevant and can lead to security issues when
+	// using different Routes to exclude some of the files from being served.
+	// e.g. if you serve files from directory as such and use different route to exclude some of the files from being served.
+	// 0. given folder structure:
+	//   public/
+	//   public/index.html
+	//   public/admin/private.txt
+	// 1. share `public/` folder contents from the server root with `e.Static("/", "public")`
+	// 2. naively assume that everything under /admin folder is now forbidden
+	//       e.GET("/admin/*", func(c *Context) error { return echo.ErrForbidden })
+	// Then request to `/assets/../admin%2fprivate.txt` will be served as router does not match it to guarded route.
+	//
+	// Applies to methods: Echo.Static, Echo.StaticFS, Group.Static, Group.StaticFS.
+	EnablePathUnescapingStaticFiles bool
+
+	// NoGroupAutoRegister404Routes bool is a flag that indicates whether echo.Group should NOT register 404 routes automatically
+	// when there are middlewares registered with the group.
+	// Note: if you decide not to register 404 routes automatically, make sure to check if all your middlewares are executed
+	// as expected. For example - CORS middleware.
+	NoGroupAutoRegister404Routes bool
 }
 
 // NewWithConfig creates an instance of Echo with given configuration.
@@ -326,6 +375,10 @@ func NewWithConfig(config Config) *Echo {
 	if config.FormParseMaxMemory > 0 {
 		e.formParseMaxMemory = config.FormParseMaxMemory
 	}
+	e.enablePathUnescapingStaticFiles = config.EnablePathUnescapingStaticFiles
+
+	e.noGroupAutoRegisterRoutes = config.NoGroupAutoRegister404Routes
+
 	return e
 }
 
@@ -342,12 +395,33 @@ func New() *Echo {
 	}
 
 	e.serveHTTPFunc = e.serveHTTP
-	e.router = NewRouter(RouterConfig{})
+	e.router = NewRouter(RouterConfig{
+		AllowOverwritingRoute: true,
+	})
 	e.HTTPErrorHandler = DefaultHTTPErrorHandler(false)
 	e.contextPool.New = func() any {
 		return newContext(nil, nil, e)
 	}
+	e.buildRouterChains()
 	return e
+}
+
+// buildRouterChains compiles the global and pre-middleware chains once so that ServeHTTP does not have to
+// re-wrap middleware closures on every request. It must be called whenever e.middleware or e.premiddleware
+// changes (i.e. from Use/Pre). This is safe because middleware must not be mutated after the server starts.
+func (e *Echo) buildRouterChains() {
+	// dispatch is the terminal of the global chain: it invokes the handler resolved during routing.
+	dispatch := func(c *Context) error {
+		return c.handler(c)
+	}
+	e.chain = applyMiddleware(dispatch, e.middleware...)
+
+	// route performs routing (storing the matched handler on the Context) and then runs the global chain.
+	route := func(c *Context) error {
+		c.handler = e.router.Route(c)
+		return e.chain(c)
+	}
+	e.preChain = applyMiddleware(route, e.premiddleware...)
 }
 
 // NewContext returns a new Context instance.
@@ -425,11 +499,13 @@ func DefaultHTTPErrorHandler(exposeError bool) HTTPErrorHandler {
 // Meaning middleware is executed even for 404 (not found) cases.
 func (e *Echo) Pre(middleware ...MiddlewareFunc) {
 	e.premiddleware = append(e.premiddleware, middleware...)
+	e.buildRouterChains()
 }
 
 // Use adds middleware to the chain which is run after router has found matching route and before route/request handler method is executed.
 func (e *Echo) Use(middleware ...MiddlewareFunc) {
 	e.middleware = append(e.middleware, middleware...)
+	e.buildRouterChains()
 }
 
 // CONNECT registers a new CONNECT route for a path with matching handler in the
@@ -478,6 +554,12 @@ func (e *Echo) POST(path string, h HandlerFunc, m ...MiddlewareFunc) RouteInfo {
 // router with optional route-level middleware. Panics on error.
 func (e *Echo) PUT(path string, h HandlerFunc, m ...MiddlewareFunc) RouteInfo {
 	return e.Add(http.MethodPut, path, h, m...)
+}
+
+// QUERY registers a new QUERY route for a path with matching handler in the
+// router with optional route-level middleware. Panics on error.
+func (e *Echo) QUERY(path string, h HandlerFunc, m ...MiddlewareFunc) RouteInfo {
+	return e.Add(QUERY, path, h, m...)
 }
 
 // TRACE registers a new TRACE route for a path with matching handler in the
@@ -535,7 +617,7 @@ func (e *Echo) Static(pathPrefix, fsRoot string, middleware ...MiddlewareFunc) R
 	return e.Add(
 		http.MethodGet,
 		pathPrefix+"*",
-		StaticDirectoryHandler(subFs, false),
+		StaticDirectoryHandler(subFs, !e.enablePathUnescapingStaticFiles),
 		middleware...,
 	)
 }
@@ -549,13 +631,22 @@ func (e *Echo) StaticFS(pathPrefix string, filesystem fs.FS, middleware ...Middl
 	return e.Add(
 		http.MethodGet,
 		pathPrefix+"*",
-		StaticDirectoryHandler(filesystem, false),
+		StaticDirectoryHandler(filesystem, !e.enablePathUnescapingStaticFiles),
 		middleware...,
 	)
 }
 
 // StaticDirectoryHandler creates handler function to serve files from provided file system
 // When disablePathUnescaping is set then file name from path is not unescaped and is served as is.
+//
+// Note: when disablePathUnescaping=false, the handler decodes the wildcard param before serving.
+// If route guards (e.g. e.GET("/admin/*", forbidden)) are used to restrict parts of the
+// filesystem, an encoded separator (%2F) or encoded dot-dot (%2E%2E) in the URL can resolve to
+// a path that the router never matched against the guard route. Enabling
+// RouterConfig.UseEscapedPathForMatching does NOT fix this — it changes which path the router
+// uses for matching but still lets path.Clean resolve ".." segments into a guarded directory.
+// Do not rely on route guards alone to restrict a filesystem served by this handler.
+// See https://github.com/labstack/echo/security/advisories/GHSA-vfp3-v2gw-7wfq
 func StaticDirectoryHandler(fileSystem fs.FS, disablePathUnescaping bool) HandlerFunc {
 	return func(c *Context) error {
 		p := c.Param("*")
@@ -567,17 +658,20 @@ func StaticDirectoryHandler(fileSystem fs.FS, disablePathUnescaping bool) Handle
 			p = tmpPath
 		}
 
-		// fs.FS.Open() already assumes that file names are relative to FS root path and considers name with prefix `/` as invalid
-		name := filepath.ToSlash(filepath.Clean(strings.TrimPrefix(p, "/")))
+		// fs.FS.Open() already assumes that file names are relative to FS root path and considers name with prefix `/`
+		// as invalid
+		// Use path.Clean (not filepath.Clean): fs.FS paths are always forward-slash, so a backslash must stay a literal
+		// character rather than being interpreted as a separator on Windows (which would resolve a file across a boundary
+		// the router never matched on, the same Windows backslash traversal class as GHSA-pgvm-wxw2-hrv9).
+		name := path.Clean(strings.TrimPrefix(p, "/"))
 		fi, err := fs.Stat(fileSystem, name)
 		if err != nil {
 			return ErrNotFound
 		}
 
-		// If the request is for a directory and does not end with "/"
-		p = c.Request().URL.Path // path must not be empty.
+		// If the request is for a directory and does not end with "/" redirect to path which ends with "/"
+		p = c.Request().URL.Path
 		if fi.IsDir() && len(p) > 0 && p[len(p)-1] != '/' {
-			// Redirect to ends with "/"
 			return c.Redirect(http.StatusMovedPermanently, sanitizeURI(p+"/"))
 		}
 		return fsFile(c, name, fileSystem)
@@ -657,7 +751,11 @@ func (e *Echo) Add(method, path string, handler HandlerFunc, middleware ...Middl
 
 // Group creates a new router group with prefix and optional group-level middleware.
 func (e *Echo) Group(prefix string, m ...MiddlewareFunc) (g *Group) {
-	g = &Group{prefix: prefix, echo: e}
+	g = &Group{
+		prefix:               prefix,
+		echo:                 e,
+		noAutoRegisterRoutes: e.noGroupAutoRegisterRoutes,
+	}
 	g.Use(m...)
 	return
 }
@@ -702,20 +800,18 @@ func (e *Echo) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	defer e.contextPool.Put(c)
 
 	c.Reset(r, w)
-	var h HandlerFunc
 
+	// The global (e.chain) and pre-middleware (e.preChain) chains are compiled once in buildRouterChains and
+	// reused here, so no middleware closures are allocated per request.
+	var err error
 	if e.premiddleware == nil {
-		h = applyMiddleware(e.router.Route(c), e.middleware...)
+		c.handler = e.router.Route(c)
+		err = e.chain(c)
 	} else {
-		h = func(cc *Context) error {
-			h1 := applyMiddleware(e.router.Route(cc), e.middleware...)
-			return h1(cc)
-		}
-		h = applyMiddleware(h, e.premiddleware...)
+		err = e.preChain(c)
 	}
 
-	// Execute chain
-	if err := h(c); err != nil {
+	if err != nil {
 		e.HTTPErrorHandler(c, err)
 	}
 }

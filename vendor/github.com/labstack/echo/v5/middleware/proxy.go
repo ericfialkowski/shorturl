@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"math/rand"
 	"net"
 	"net/http"
@@ -330,9 +331,7 @@ func (config ProxyConfig) ToMiddleware() (echo.MiddlewareFunc, error) {
 		if config.RegexRewrite == nil {
 			config.RegexRewrite = make(map[*regexp.Regexp]string)
 		}
-		for k, v := range rewriteRulesRegex(config.Rewrite) {
-			config.RegexRewrite[k] = v
-		}
+		maps.Copy(config.RegexRewrite, rewriteRulesRegex(config.Rewrite))
 	}
 
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
@@ -356,8 +355,14 @@ func (config ProxyConfig) ToMiddleware() (echo.MiddlewareFunc, error) {
 			if req.Header.Get(echo.HeaderXForwardedProto) == "" {
 				req.Header.Set(echo.HeaderXForwardedProto, c.Scheme())
 			}
-			if c.IsWebSocket() && req.Header.Get(echo.HeaderXForwardedFor) == "" { // For HTTP, it is automatically set by Go HTTP reverse proxy.
-				req.Header.Set(echo.HeaderXForwardedFor, c.RealIP())
+			if c.IsWebSocket() { // For HTTP, this is set by Go HTTP reverse proxy.
+				// Append, not set, to preserve the incoming chain from upstream proxies.
+				prior := req.Header[echo.HeaderXForwardedFor]
+				if len(prior) > 0 {
+					req.Header.Set(echo.HeaderXForwardedFor, strings.Join(prior, ", ")+", "+c.RealIP())
+				} else {
+					req.Header.Set(echo.HeaderXForwardedFor, c.RealIP())
+				}
 			}
 
 			retries := config.RetryCount
@@ -365,6 +370,9 @@ func (config ProxyConfig) ToMiddleware() (echo.MiddlewareFunc, error) {
 				tgt, err := config.Balancer.Next(c)
 				if err != nil {
 					return config.ErrorHandler(c, err)
+				}
+				if tgt == nil || tgt.URL == nil {
+					return config.ErrorHandler(c, echo.NewHTTPError(http.StatusBadGateway, "no proxy target available"))
 				}
 
 				c.Set(config.ContextKey, tgt)

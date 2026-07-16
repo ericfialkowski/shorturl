@@ -4,6 +4,7 @@
 package echo
 
 import (
+	"cmp"
 	stdContext "context"
 	"crypto/tls"
 	"errors"
@@ -117,18 +118,16 @@ func (sc StartConfig) start(ctx stdContext.Context, h http.Handler) error {
 
 	listener := sc.Listener
 	if listener == nil {
-		listenerNetwork := sc.ListenerNetwork
-		if listenerNetwork == "" {
-			listenerNetwork = "tcp"
-		}
-		var err error
-		if sc.TLSConfig != nil {
-			listener, err = tls.Listen(listenerNetwork, sc.Address, sc.TLSConfig)
-		} else {
-			listener, err = net.Listen(listenerNetwork, sc.Address)
-		}
+		listenerNetwork := cmp.Or(sc.ListenerNetwork, "tcp")
+
+		ln, err := (&net.ListenConfig{}).Listen(ctx, listenerNetwork, sc.Address)
 		if err != nil {
 			return err
+		}
+		listener = ln
+
+		if sc.TLSConfig != nil {
+			listener = tls.NewListener(listener, sc.TLSConfig)
 		}
 	}
 
@@ -157,11 +156,9 @@ func (sc StartConfig) start(ctx stdContext.Context, h http.Handler) error {
 	defer cancel()
 
 	if sc.GracefulTimeout >= 0 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			gracefulShutdown(gCtx, &sc, &server, logger)
-		}()
+		})
 	}
 
 	if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
